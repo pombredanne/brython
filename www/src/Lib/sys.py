@@ -1,12 +1,11 @@
 # hack to return special attributes
 from _sys import *
+
+_getframe = Getframe
 from javascript import JSObject
+from browser import window
 
-has_local_storage=__BRYTHON__.has_local_storage
-has_session_storage = __BRYTHON__.has_session_storage
-has_json=__BRYTHON__.has_json
-
-argv = ['__main__']
+brython_debug_mode = __BRYTHON__.debug
 
 base_exec_prefix = __BRYTHON__.brython_path
 
@@ -17,7 +16,9 @@ builtin_module_names=__BRYTHON__.builtin_module_names
 byteorder='little'
 
 def exc_info():
-    exc = __BRYTHON__.exception_stack[-1]
+    exc = __BRYTHON__.current_exception
+    if exc is None:
+        return(None, None, None)
     return (exc.__class__,exc,exc.traceback)
     
 exec_prefix = __BRYTHON__.brython_path
@@ -49,17 +50,20 @@ def getfilesystemencoding(*args,**kw):
     Return the encoding used to convert Unicode filenames in
     operating system filenames."""
     return 'utf-8'
-    
-maxsize=2147483647
+
+def getrecursionlimit():
+    return 200
+
+maxsize=2**63-1
 
 maxunicode=1114111
 
-path = __BRYTHON__.path
+# Imported from _sys
+# path = __BRYTHON__.path
+# #path_hooks = list(JSObject(__BRYTHON__.path_hooks))
+# meta_path=__BRYTHON__.meta_path
 
-#path_hooks = list(JSObject(__BRYTHON__.path_hooks))
-meta_path=__BRYTHON__.meta_path
-
-platform="brython"
+platform = "brython"
 
 prefix = __BRYTHON__.brython_path
 
@@ -170,6 +174,11 @@ warnoptions=[]
 
 def getfilesystemencoding():
     return 'utf-8'
+
+## __stdxxx__ contains the original values of sys.stdxxx
+__stdout__ = __BRYTHON__.stdout
+__stderr__ = __BRYTHON__.stderr
+__stdin__ = __BRYTHON__.stdin
 
 #delete objects not in python sys module namespace
 del JSObject

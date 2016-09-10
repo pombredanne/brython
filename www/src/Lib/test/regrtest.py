@@ -1,4 +1,4 @@
-#! /usr/bin/python3.3
+#! /usr/bin/env python3
 
 """
 Usage:
@@ -255,7 +255,7 @@ def usage(msg):
 
 
 def main(tests=None, testdir=None, verbose=0, quiet=False,
-         exclude=False, single=0, randomize=False, fromfile=None,
+         exclude=False, single=False, randomize=False, fromfile=None,
          findleaks=False, use_resources=None, trace=False, coverdir='coverage',
          runleaks=False, huntrleaks=False, verbose2=False, print_slow=False,
          random_seed=None, use_mp=None, verbose3=False, forever=False,
@@ -306,7 +306,7 @@ def main(tests=None, testdir=None, verbose=0, quiet=False,
              'runleaks', 'huntrleaks=', 'memlimit=', 'randseed=',
              'multiprocess=', 'coverage', 'slaveargs=', 'forever', 'debug',
              'start=', 'nowindows', 'header', 'testdir=', 'timeout=', 'wait',
-             'failfast', 'match=', 'next='])
+             'failfast', 'match='])
     except getopt.error as msg:
         usage(msg)
 
@@ -340,14 +340,13 @@ def main(tests=None, testdir=None, verbose=0, quiet=False,
         elif o in ('-S', '--start'):
             start = a
         elif o in ('-s', '--single'):
-            single = 1
-        elif o == '--next':
-            single = int(a)
+            single = True
         elif o in ('-o', '--slow'):
             print_slow = True
         elif o in ('-r', '--randomize'):
             randomize = True
         elif o == '--randseed':
+            randomize = True
             random_seed = int(a)
         elif o in ('-f', '--fromfile'):
             fromfile = a
@@ -456,13 +455,13 @@ def main(tests=None, testdir=None, verbose=0, quiet=False,
             # join it with the saved CWD so it ends up where the user expects.
             testdir = os.path.join(support.SAVEDCWD, a)
         elif o == '--timeout':
-            if hasattr(faulthandler, 'dump_tracebacks_later'):
+            if hasattr(faulthandler, 'dump_traceback_later'):
                 timeout = float(a)
                 if timeout <= 0:
                     timeout = None
             else:
                 print("Warning: The timeout option requires "
-                      "faulthandler.dump_tracebacks_later")
+                      "faulthandler.dump_traceback_later")
                 timeout = None
         elif o == '--wait':
             input("Press any key to continue...")
@@ -536,7 +535,7 @@ def main(tests=None, testdir=None, verbose=0, quiet=False,
         args = []
 
     # For a partial run, we do not need to clutter the output.
-    if verbose or header or not (quiet or single != 1 or tests or args):
+    if verbose or header or not (quiet or single or tests or args):
         # Print basic platform information
         print("==", platform.python_implementation(), *sys.version.split())
         print("==  ", platform.platform(aliased=True),
@@ -553,13 +552,9 @@ def main(tests=None, testdir=None, verbose=0, quiet=False,
 
     selected = tests or args or alltests
     if single:
-        first_selected = selected[0]
-        index_selected = alltests.index(first_selected)
-        if index_selected + single > len(alltests):
-            single = len(alltests) - index_selected
-        selected = alltests[index_selected:index_selected+single]
+        selected = selected[:1]
         try:
-            next_single_test = alltests[index_selected+single]
+            next_single_test = alltests[alltests.index(selected[0])+1]
         except IndexError:
             next_single_test = None
     # Remove all the selected tests that precede start if it's set.
@@ -910,7 +905,7 @@ def runtest(test, verbose, quiet,
         support.use_resources = use_resources
     use_timeout = (timeout is not None)
     if use_timeout:
-        faulthandler.dump_tracebacks_later(timeout, exit=True)
+        faulthandler.dump_traceback_later(timeout, exit=True)
     try:
         support.match_tests = match_tests
         if failfast:
@@ -950,7 +945,7 @@ def runtest(test, verbose, quiet,
         return result
     finally:
         if use_timeout:
-            faulthandler.cancel_dump_tracebacks_later()
+            faulthandler.cancel_dump_traceback_later()
         cleanup_test_droppings(test, verbose)
 runtest.stringio = None
 

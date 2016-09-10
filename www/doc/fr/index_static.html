@@ -5,30 +5,7 @@
 <title>Documentation Brython</title>
 <link rel="stylesheet" href="<prefix>/doc_brython.css">
 
-<script type="text/javascript" src="/src/brython_builtins.js"></script>
-<script type="text/javascript" src="/src/version_info.js"></script>
-<script type="text/javascript" src="/src/identifiers_re.js"></script>
-<script type="text/javascript" src="/src/py2js.js"></script>
-<script type="text/javascript" src="/src/py_object.js"></script>
-<script type="text/javascript" src="/src/py_type.js"></script>
-<script type="text/javascript" src="/src/py_utils.js"></script>
-<script type="text/javascript" src="/src/py_generator.js"></script>
-<script type="text/javascript" src="/src/py_builtin_functions.js"></script>
-<script type="text/javascript" src="/src/py_bytes.js"></script>
-<script type="text/javascript" src="/src/py_set.js"></script>
-<script type="text/javascript" src="/src/js_objects.js"></script>
-<script type="text/javascript" src="/src/stdlib_paths.js"></script>
-<script type="text/javascript" src="/src/py_import.js"></script>
-
-<script type="text/javascript" src="/src/py_string.js"></script>
-<script type="text/javascript" src="/src/py_int.js"></script>
-<script type="text/javascript" src="/src/py_float.js"></script>
-<script type="text/javascript" src="/src/py_complex.js"></script>
-<script type="text/javascript" src="/src/py_dict.js"></script>
-<script type="text/javascript" src="/src/py_list.js"></script>
-<script type="text/javascript" src="/src/py_dom.js"></script>
-
-<script type="text/javascript" src="/src/builtin_modules.js"></script>
+<script type="text/javascript" src="/src/brython.js"></script>
 
 <script type="text/python">
 import time
@@ -40,10 +17,11 @@ header.show('../<prefix>/', 'fr')
 
 
 def run(ev):
-    # run the code in the elt after the button
-    ix = ev.target.parent.children.index(ev.target)
-    elt = ev.target.parent.children[ix+1]
-    exec(elt.text)
+    # run the code in the element after the button
+    tg = ev.target
+    while tg.tagName != 'BUTTON':
+        tg = tg.parent
+    exec(tg.python_code,{})
     elt.focus()
 
 target = 'content'
@@ -58,6 +36,8 @@ for elt in document[target].get(selector='.exec'):
     elt.focus()
     btn = html.BUTTON('▶')
     btn.bind('click', run)
+    # set attribute python_code, used when button is hit
+    btn.python_code = src
     elt.parent.insertBefore(btn, elt)
 for elt in document[target].get(selector='.exec_on_load'):
     # Python code executed on page load
@@ -66,7 +46,7 @@ for elt in document[target].get(selector='.exec_on_load'):
     h.className = "pycode"
     elt.clear()
     elt <= h
-    exec(src)
+    exec(src,{})
 for elt in document[target].get(selector='.python'):
     src = elt.text.strip()
     h = highlight.highlight(src)
@@ -83,7 +63,7 @@ for elt in document[target].get(selector='.python'):
 
 <table id=banner cellpadding=0 cellspacing=0>
 <tr id=banner_row >
-<td class="logo"><a href="../../index.html"><img src="../../brython.svg" class="logo"></a></td>
+<td class="logo"><a href="../<prefix>/index.html"><img src="/brython.png" class="logo"></a></td>
 </tr>
 </table>
 
@@ -91,11 +71,9 @@ for elt in document[target].get(selector='.python'):
 <tr>
 <td style="width:20%;vertical-align:top;">
 <h4><a class="navig" href="intro.html">Introduction</a></h4>
-
 <h4><a class="navig" href="faq.html">Questions fréquemment posées</a></h4>
-
 <h4><a class="navig" href="syntax.html">Syntaxe, mots-clés et fonctions intégrées</a></h4>
-
+<h4><a class="navig" href="stdlib.html">Distribution</a></h4>
 <h4><a class="navig" href="import.html">Implémentation de <tt>import</tt></a></h4>
 
 <h4>Interface avec le navigateur</h4>
@@ -152,16 +130,9 @@ for elt in document[target].get(selector='.python'):
 <br><a class="navig" href="cookbook/read_file.html">Lire le contenu d'un fichier</a>
 <br><a class="navig" href="cookbook/local_storage.html">Stocker des objects localement</a>
 <br><a class="navig" href="cookbook/read_text_from_imagemap.html">Exemple de onmouseover</a>
-<br><a class="navig" href="cookbook/draw_image.html">Ajouter une image dans un canvas</a>
 
 </div>
 
-
-<h4>Notes sur l'implémentation</h4>
-<div style="padding-left:10px;">
-<a class="navig" href="modele.html">Compilation et exécution</a>
-<br><a class="navig" href="implem.html">Conversion de syntaxe Python &rarr; JS</a>
-</div>
 </td>
 
 <td id="content" style="vertical-align:top;">

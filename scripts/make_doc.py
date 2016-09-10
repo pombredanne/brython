@@ -3,9 +3,11 @@ import shutil
 import sys
 
 # hack sys.path to be able to import markdown
-sys.path.append(os.path.join(os.path.dirname(os.getcwd()),
+sys.path.insert(0, os.path.join(os.path.dirname(os.getcwd()),
     'www','src','Lib','browser'))
 import markdown
+# restore original sys.path
+del sys.path[0]
 
 # path of markdown files
 md_doc_path = os.path.join(os.path.dirname(os.getcwd()),'www','doc')
@@ -17,8 +19,18 @@ for path in src_paths:
     if not os.path.exists(path):
         os.mkdir(path)
 
+# copy css
 shutil.copy(os.path.join(md_doc_path,'doc_brython.css'),
     os.path.join(static_doc_path,'doc_brython.css'))
+
+# copy images
+images_dir_src = os.path.join(md_doc_path,'images')
+images_dir_dest = os.path.join(static_doc_path,'images')
+if not os.path.exists(images_dir_dest):
+    os.mkdir(images_dir_dest)
+
+for img in os.listdir(images_dir_src):
+    shutil.copy(os.path.join(images_dir_src, img), images_dir_dest)
 
 for lang in ['fr', 'en', 'es']: 
     dest_path = os.path.join(static_doc_path, lang)
@@ -54,3 +66,9 @@ for lang in ['fr', 'en', 'es']:
             elif ext=='.txt':
                 shutil.copy(os.path.join(src_path, filename),
                     os.path.join(dest_path, filename))
+            elif os.path.isdir(os.path.join(src_path,filename)) \
+                and filename!='cookbook':
+                dest_dir = os.path.join(dest_path, filename)
+                if os.path.exists(dest_dir):
+                    shutil.rmtree(dest_dir)
+                shutil.copytree(os.path.join(src_path, filename), dest_dir)

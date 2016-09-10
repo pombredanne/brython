@@ -1,4 +1,5 @@
-[![Stories in Ready](https://badge.waffle.io/brython-dev/brython.svg?label=ready&title=Ready)](http://waffle.io/brython-dev/brython)    [![Join the chat at https://gitter.im/brython-dev/brython](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/brython-dev/brython?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge "Chat with Brython Users and Developers")
+[![Stories in Ready](https://badge.waffle.io/brython-dev/brython.svg?label=ready&title=Ready)](http://waffle.io/brython-dev/brython)
+[![Travis](https://api.travis-ci.org/brython-dev/brython.svg)](https://travis-ci.org/brython-dev/brython)
 
 
 brython
@@ -13,7 +14,7 @@ Here is a simple example of an HTML page running Python:
     <html>
 
         <head>
-            <script src="/src/brython.js"></script>
+            <script type="text/javascript" src="/path/to/brython.js"></script>
         </head>
 
         <body onload="brython()">
@@ -36,8 +37,8 @@ Here is a simple example of an HTML page running Python:
 
 To use Brython, all there is to do is:
 
-1. Load the script [brython.js](http://brython.info/src/brython_dist.js "Brython from the site brython.info").
-2. Run the function brython() on page load, like `<body onload=brython()>`.
+1. Load the script [brython.js](http://brython.info/src/brython.js "Brython from the site brython.info").
+2. Run the function `brython()` on page load, like `<body onload=brython()>`.
 3. Write Python code inside tags `<script type="text/python">` or linking it.
 
 
@@ -54,12 +55,46 @@ It supports lastest specs of HTML5/CSS3, and can use CSS Frameworks like Bootstr
 
 Getting started
 ===============
-In the Releases section, load the latest version of the Brython site mirror,
-unzip it and start the built-in web server `server.py`. This will point your
-browser to [http://localhost:8000/site](http://localhost:8000/site):
-you access a clone of the [Brython site](http://brython.info "Brython Homepage")
-with an online editor, a console similar to the CPython interpreter,
-a gallery with many examples and a comprehensive documentation.
+Zero install !
+--------------
+The most simple way to get started, without anything to install, is to use the 
+distribution available online through [rawgit](https://rawgit.com/). You can 
+either choose the latest stable release, for instance for release 3.2.2 :
+
+```xml
+<script type="text/javascript"
+    src="https://cdn.rawgit.com/brython-dev/brython/3.2.2/www/src/brython.js">
+</script>
+```
+
+or the current development version :
+
+```xml
+<script type="text/javascript" 
+    src="https://cdn.rawgit.com/brython-dev/brython/master/www/src/brython.js">
+</script>
+```
+
+The previous code will allow you to use raw python code but imports will fail as they are implemented using ajax calls and it will not work using http://rawgit.com/. If you want to test your projects using a standalone javascript file with the [available stdlib](https://github.com/brython-dev/brython/tree/master/www/src/Lib) included (so import would work) you should use:
+
+```xml
+<script type="text/javascript"
+    src="https://cdn.rawgit.com/brython-dev/brython/3.2.2/www/src/brython_dist.js">
+</script>
+```
+
+or the current development version :
+
+```xml
+<script type="text/javascript" 
+    src="https://cdn.rawgit.com/brython-dev/brython/master/www/src/brython_dist.js">
+</script>
+```
+
+Local install
+-------------
+You can also install the development environment locally, either by cloning the
+project :
 
 ```bash
 git clone https://github.com/brython-dev/brython.git
@@ -67,10 +102,19 @@ cd brython
 python server.py
 ```
 
-Once you are familiar with the examples...,
-create a new folder "app" at the same level as "site" and create a file "index.html"
-with the HTML example above.
-Point the browser to [http://localhost:8000/app](http://localhost:8000/app) to see the result.
+or by loading the latest version of the Brython site mirror from the 
+[releases page](https://github.com/brython-dev/brython/releases).
+
+In both cases, start the built-in web server : `python server.py`. This will 
+point your browser to [http://localhost:8000/site](http://localhost:8000/site):
+you access a clone of the [Brython site](http://brython.info "Brython Homepage")
+with an online editor, a console similar to the CPython interpreter,
+a gallery with many examples and a comprehensive documentation.
+
+Once you are familiar with the examples, create a new folder "app" at the same
+level as "site" and create a file "index.html" with the HTML example above.
+Point the browser to [http://localhost:8000/app](http://localhost:8000/app) to 
+see the result.
 
 Test Brython online
 ===================
@@ -91,24 +135,26 @@ Documentation
 =============
 Documentation is available on the [official site](http://www.brython.info "Brython Homepage").
 You can read the docs in [English](http://brython.info/doc/en/index.html),
-[French](http://brython.info/doc/fr/index.html),
-[Spanish](http://brython.info/doc/es/index.html) and
-[Portuguese](http://brython.info/doc/pt/index.html).
+[French](http://brython.info/doc/fr/index.html) and
+[Spanish](http://brython.info/doc/es/index.html).
+
 The most updated docs usually are the English and French versions so if you 
 want to be up-to-date, please, use these versions.
 
+Curious about [how Brython works](https://github.com/brython-dev/brython/wiki/How%20Brython%20works) ?
 
-Questions, feedback, issues, new features...
-=============================================
-There is a main [mail list in English](https://groups.google.com/forum/?fromgroups=#!forum/brython "Brython Main Mailing List").
+Community (questions, feedback, issues, new features, ...)
+==========================================================
+There is a main [mailing list in English](https://groups.google.com/forum/?fromgroups=#!forum/brython "Brython Main Mailing List").
 Also, you can find [mail list in other languages](http://brython.info/groups.html "Brython Mailing Lists")
 but the activity is very low and it is recommended to use the main one in English.
 
 If you find a bug/issue or do you want to see a new feature in Brython, please,
 [open a new issue](https://github.com/brython-dev/brython/issues "Brython GitHub Issues").
 
-Theres a [Brython Community on Google Plus](https://plus.google.com/communities/114694456237115550531).
+There's a [Brython Community on Google Plus](https://plus.google.com/communities/114694456237115550531).
 
+IRC: #brython on [freenode](https://webchat.freenode.net/)
 
 Agile Development
 =================
@@ -118,3 +164,10 @@ Agile Development
 - **Throughput Graph:** *Statistics about our work...*
 
 [![Throughput Graph](https://graphs.waffle.io/brython-dev/brython/throughput.svg)](https://waffle.io/brython-dev/brython/metrics)
+
+
+Thank you
+=========
+
+- [BrowserStack](http://www.browserstack.com) for providing an access
+to their online testing environment.

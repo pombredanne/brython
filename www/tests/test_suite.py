@@ -231,6 +231,12 @@ donnée = 10
 
 assert donnée + машина + ήλιος == 23
 
+# Korean
+def 안녕하세요():
+    return "hello"
+
+assert 안녕하세요()=="hello"
+
 # functions and methods
 class foo:
     def method(self, x):
@@ -306,6 +312,15 @@ def f():
 
 assert f()==[0, 1]
 
+def P():
+    b=1
+    def Q():
+        nonlocal b
+        b+=1
+        return b
+    return Q()
+assert P()==2
+
 # use imported names
 from a import *
 
@@ -342,4 +357,11 @@ assert f()==2
 
 # check that name "constructor" is valid
 constructor = 0
+
+# exception attributes
+try:
+    'a'+2
+except TypeError as exc:
+    assert exc.args[0] == "Can't convert int to str implicitely"
+
 print('passed all tests...')

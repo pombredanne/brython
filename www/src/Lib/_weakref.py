@@ -18,6 +18,9 @@ class ref:
         self.obj = ReferenceType(obj,callback)
         self.callback=callback
 
+    def __call__(self):
+        return self.obj.obj
+
 def getweakrefcount(obj):
     return 1
 
@@ -25,6 +28,6 @@ def getweakrefs(obj):
     return obj
 
 
-def proxy(obj,callback):
+def proxy(obj,callback=None):
     return ProxyType(obj)
 

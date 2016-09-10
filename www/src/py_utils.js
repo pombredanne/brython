@@ -2,234 +2,136 @@
 
 var _b_=$B.builtins
 
-$B.$MakeArgs = function($fname,$args,$required,$defaults,$other_args,$other_kw,$after_star){
+$B.args = function($fname,argcount,slots,var_names,$args,$dobj,
+    extra_pos_args,extra_kw_args){
     // builds a namespace from the arguments provided in $args
     // in a function defined like foo(x,y,z=1,*args,u,v,**kw) the parameters are
-    // $required : ['x','y']
-    // $defaults : {'z':1}
-    // $other_args = 'args'
-    // $other_kw = 'kw'
-    // $after_star = ['u','v']
-
-    var $ns = {},$arg
-
-    var $robj = {}
-    for(var i=0;i<$required.length;i++){$robj[$required[i]]=null}
-
-    var $dobj = {}
-    for(var i=0;i<$defaults.length;i++){$dobj[$defaults[i]]=null}
-
-    if($other_args != null){$ns[$other_args]=[]}
-    if($other_kw != null){var $dict_keys=[], $dict_values=[]}
-    // create new list of arguments in case some are packed
-    var upargs = []
-    for(var i=0, _len_i = $args.length; i < _len_i;i++){
-        $arg = $args[i]
-        if($arg===undefined){console.log('arg '+i+' undef in '+$fname)}
-        else if($arg===null){upargs.push(null)}
-        else {
-           switch($arg.$nat) {
-             case 'ptuple':
-               var _arg=$arg.arg
-               for(var j=0, _len_j = _arg.length; j < _len_j;j++) upargs.push(_arg[j])
-               break
-             case 'pdict':
-               var _arg=$arg.arg, items=_b_.list(_b_.dict.$dict.items(_arg))
-               for(var j=0, _len_j = items.length; j < _len_j;j++){
-                  upargs.push({$nat:"kw",name:items[j][0],value:items[j][1]})
-               }
-               break
-             default:
-               upargs.push($arg)
-           }//switch
-        }//else
+    // $fname = "f"
+    // argcount = 3 (for x, y , z)
+    // slots = {x:null, y:null, z:null}
+    // var_names = ['x', 'y', 'z']
+    // $dobj = {'z':1}
+    // extra_pos_args = 'args'
+    // extra_kw_args = 'kw'
+        
+    var has_kw_args = false, 
+        nb_pos = $args.length,
+        $ns
+    
+    // If the function call had keywords arguments, they are in the last
+    // element of $args
+    if(nb_pos>0 && $args[nb_pos-1].$nat){
+        has_kw_args=true
+        nb_pos--
+        var kw_args=$args[nb_pos].kw
     }
-    var nbreqset = 0 // number of required arguments set
-    for(var $i=0, _len_$i = upargs.length; $i < _len_$i;$i++){
-        var $arg=upargs[$i]
-        var $PyVar=$B.$JS2Py($arg)
-        if($arg && $arg.$nat=='kw'){ // keyword argument
-            $PyVar = $arg.value
-            if($ns[$arg.name]!==undefined){
-                throw _b_.TypeError($fname+"() got multiple values for argument '"+$arg.name+"'")
-            }else if($robj[$arg.name]===null){
-                $ns[$arg.name]=$PyVar
-                nbreqset++
-            }else if($other_args!==null && $after_star!==undefined &&
-                $after_star.indexOf($arg.name)>-1){
-                    var ix = $after_star.indexOf($arg.name)
-                    $ns[$after_star[ix]]=$PyVar
-            } else if($dobj[$arg.name]===null){
-                $ns[$arg.name]=$PyVar
-                var pos_def = $defaults.indexOf($arg.name)
-                $defaults.splice(pos_def,1)
-                delete $dobj[$arg.name]
-            } else if($other_kw!=null){
-                $dict_keys.push($arg.name)
-                $dict_values.push($PyVar)
-            } else {
-                throw _b_.TypeError($fname+"() got an unexpected keyword argument '"+$arg.name+"'")
+
+    if(extra_pos_args){
+        slots[extra_pos_args]=[]; 
+        slots[extra_pos_args].__class__=_b_.tuple.$dict
+    }
+    if(extra_kw_args){
+        // Build a dict object faster than with _b_.dict()
+        slots[extra_kw_args]={
+            __class__:_b_.dict.$dict,
+            $numeric_dict : {},
+            $object_dict : {},
+            $string_dict : {},
+            $str_hash: {},
+            length: 0
+        }
+    }
+
+    if(nb_pos>argcount){
+        // More positional arguments than formal parameters
+        if(extra_pos_args===null){
+            // No parameter to store extra positional arguments :
+            // thow an exception
+            msg = $fname+"() takes "+argcount+' positional argument'+
+                (argcount> 1 ? '' : 's') + ' but more were given'
+            throw _b_.TypeError(msg)
+        }else{
+            // Store extra positional arguments
+            for(var i=argcount;i<nb_pos;i++){
+                slots[extra_pos_args].push($args[i])
             }
-        }else{ // positional argument
-            if($i<$required.length){
-                $ns[$required[$i]]=$PyVar
-                nbreqset++
-            } else if($other_args!==null){
-                $ns[$other_args].push($PyVar)
-            } else if($i<$required.length+$defaults.length) {
-                $ns[$defaults[$i-$required.length]]=$PyVar
-            } else {
-                console.log(''+$B.line_info)
-                msg = $fname+"() takes "+$required.length+' positional argument'
-                msg += $required.length == 1 ? '' : 's'
-                msg += ' but more were given'
-                throw _b_.TypeError(msg)
+            //slots[extra_pos_args] = _b_.tuple(Array.prototype.slice.call($args,
+            //    argcount,nb_pos))
+            // For the next step of the algorithm, only use the arguments
+            // before these extra arguments
+            nb_pos = argcount
+        }
+    }
+
+    // Fill slots with positional (non-extra) arguments
+    for(var i=0;i<nb_pos;i++){slots[var_names[i]]=$args[i]}
+
+    // Then fill slots with keyword arguments, if any
+    if(has_kw_args){
+        for(var key in kw_args){
+            var value=kw_args[key]
+            if(slots[key]===undefined){
+                // The name of the keyword argument doesn't match any of the
+                // formal parameters
+                if(extra_kw_args){
+                    // If there is a place to store extra keyword arguments
+                    slots[extra_kw_args].$string_dict[key]=value
+                }else{
+                    throw _b_.TypeError($fname+"() got an unexpected keyword argument '"+key+"'")
+                }
+            }else if(slots[key]!==null){
+                // The slot is already filled
+                throw _b_.TypeError($fname+"() got multiple values for argument '"+key+"'")            
+            }else{    
+                // Fill the slot with the key/value pair
+                slots[key] = value
             }
         }
     }
-    if(nbreqset!==$required.length){
-        // throw error if not all required positional arguments have been set
-        var missing = []
-        for(var i=0, _len_i = $required.length; i < _len_i;i++){
-            if($ns[$required[i]]===undefined){missing.push($required[i])}
+    
+    // If there are unfilled slots, see if there are default values
+    var missing = []
+    for(var attr in slots){
+        if(slots[attr]===null){
+            if($dobj[attr]!==undefined){slots[attr]=$dobj[attr]}
+            else{missing.push("'"+attr+"'")}
         }
+    }
+    
+    if(missing.length>0){
+
         if(missing.length==1){
-            throw _b_.TypeError($fname+" missing 1 positional argument: '"+missing[0]+"'")
-        }else if(missing.length>1){
+            throw _b_.TypeError($fname+" missing 1 positional argument: "+missing[0])
+        }else{
             var msg = $fname+" missing "+missing.length+" positional arguments: "
-            for(var i=0, _len_i = missing.length-1; i < _len_i;i++){msg += "'"+missing[i]+"', "}
-            msg += "and '"+missing.pop()+"'"
+            msg += missing.join(' and ')
             throw _b_.TypeError(msg)
         }
+    
     }
-    if($other_kw!=null){
-        $ns[$other_kw]=_b_.dict()
-        for(var i=0;i<$dict_keys.length;i++){
-            _b_.dict.$dict.__setitem__($ns[$other_kw], $dict_keys[i],
-                $dict_values[i])
-        }
-    }
-    if($other_args!=null){$ns[$other_args]=_b_.tuple($ns[$other_args])}
-    return $ns
+
+    return slots
+    
 }
 
-$B.$MakeArgs1 = function($fname,$args,$robj,$required,$dobj,$defaults,
-    $other_args,$other_kw,$after_star){
-    // builds a namespace from the arguments provided in $args
-    // in a function defined like foo(x,y,z=1,*args,u,v,**kw) the parameters are
-    // $required : ['x','y']
-    // $defaults : {'z':1}
-    // $other_args = 'args'
-    // $other_kw = 'kw'
-    // $after_star = ['u','v']
-
-    var $ns = {},$arg
-
-    if($other_args != null){$ns[$other_args]=[]}
-    if($other_kw != null){var $dict_keys=[], $dict_values=[]}
-    // create new list of arguments in case some are packed
-    var upargs = []
-    for(var i=0, _len_i = $args.length; i < _len_i;i++){
-        $arg = $args[i]
-        if($arg===undefined){console.log('arg '+i+' undef in '+$fname)}
-        else if($arg===null){upargs.push(null)}
-        else {
-           switch($arg.$nat) {
-             case 'ptuple':
-               var _arg=$arg.arg
-               for(var j=0, _len_j = _arg.length; j < _len_j;j++) upargs.push(_arg[j])
-               break
-             case 'pdict':
-               var _arg=$arg.arg, items=_b_.list(_b_.dict.$dict.items(_arg))
-               for(var j=0, _len_j = items.length; j < _len_j;j++){
-                  upargs.push({$nat:"kw",name:items[j][0],value:items[j][1]})
-               }
-               break
-             default:
-               upargs.push($arg)
-           }//switch
-        }//else
-    }
-    var nbreqset = 0 // number of required arguments set
-    for(var $i=0, _len_$i = upargs.length; $i < _len_$i;$i++){
-        var $arg=upargs[$i]
-        var $PyVar=$B.$JS2Py($arg)
-        if($arg && $arg.$nat=='kw'){ // keyword argument
-            $PyVar = $arg.value
-            if($ns[$arg.name]!==undefined){
-                throw _b_.TypeError($fname+"() got multiple values for argument '"+$arg.name+"'")
-            }else if($robj[$arg.name]===null){
-                $ns[$arg.name]=$PyVar
-                nbreqset++
-            }else if($other_args!==null && $after_star!==undefined &&
-                $after_star.indexOf($arg.name)>-1){
-                    var ix = $after_star.indexOf($arg.name)
-                    $ns[$after_star[ix]]=$PyVar
-            } else if($dobj[$arg.name]===null){
-                $ns[$arg.name]=$PyVar
-                var pos_def = $defaults.indexOf($arg.name)
-                $defaults.splice(pos_def,1)
-                delete $dobj[$arg.name]
-            } else if($other_kw!=null){
-                $dict_keys.push($arg.name)
-                $dict_values.push($PyVar)
-            } else {
-                throw _b_.TypeError($fname+"() got an unexpected keyword argument '"+$arg.name+"'")
-            }
-        }else{ // positional argument
-            if($i<$required.length){
-                $ns[$required[$i]]=$PyVar
-                nbreqset++
-            } else if($other_args!==null){
-                $ns[$other_args].push($PyVar)
-            } else if($i<$required.length+$defaults.length) {
-                $ns[$defaults[$i-$required.length]]=$PyVar
-            } else {
-                msg = $fname+"() takes "+$required.length+' positional argument'
-                msg += $required.length == 1 ? '' : 's'
-                msg += ' but more were given'
-                throw _b_.TypeError(msg)
-            }
-        }
-    }
-    if(nbreqset!==$required.length){
-        // throw error if not all required positional arguments have been set
-        var missing = []
-        for(var i=0, _len_i = $required.length; i < _len_i;i++){
-            if($ns[$required[i]]===undefined){missing.push($required[i])}
-        }
-        if(missing.length==1){
-            throw _b_.TypeError($fname+" missing 1 positional argument: '"+missing[0]+"'")
-        }else if(missing.length>1){
-            var msg = $fname+" missing "+missing.length+" positional arguments: "
-            for(var i=0, _len_i = missing.length-1; i < _len_i;i++){msg += "'"+missing[i]+"', "}
-            msg += "and '"+missing.pop()+"'"
-            throw _b_.TypeError(msg)
-        }
-    }
-    if($other_kw!=null){
-        $ns[$other_kw]=_b_.dict()
-        for(var i=0;i<$dict_keys.length;i++){
-            _b_.dict.$dict.__setitem__($ns[$other_kw], $dict_keys[i],
-                $dict_values[i])
-        }
-    }
-    if($other_args!=null){$ns[$other_args]=_b_.tuple($ns[$other_args])}
-    return $ns
-}
-
-
-$B.get_class = function(obj){
+$B.get_class = function(obj, from){
     // generally we get the attribute __class__ of an object by obj.__class__
     // but Javascript builtins used by Brython (functions, numbers, strings...)
     // don't have this attribute so we must return it
+
     if(obj===null){return $B.$NoneDict}
     var klass = obj.__class__
     if(klass===undefined){
         switch(typeof obj) {
           case 'number':
-            obj.__class__=_b_.int.$dict
-            return _b_.int.$dict
+            if (obj % 1 === 0) { // this is an int
+               obj.__class__=_b_.int.$dict
+               return _b_.int.$dict
+            }
+            // this is a float
+            //obj= _b_.float(obj)
+            obj.__class__=_b_.float.$dict
+            return _b_.float.$dict
           case 'string':
             obj.__class__=_b_.str.$dict
             return _b_.str.$dict
@@ -240,10 +142,13 @@ $B.get_class = function(obj){
             obj.__class__=$B.$FunctionDict
             return $B.$FunctionDict
           case 'object':
-            if(obj.constructor===Array) {
-              obj.__class__=_b_.list.$dict
-              return _b_.list.$dict
-            }
+            if(Array.isArray(obj)){
+                if(Object.getPrototypeOf(obj)===Array.prototype) {
+                  obj.__class__=_b_.list.$dict
+                  return _b_.list.$dict
+                }
+            }else if(obj.constructor===Number) return _b_.float.$dict
+            break
         }
     }
     return klass
@@ -261,193 +166,176 @@ function clear(ns){
     delete $B.vars[ns], $B.bound[ns], $B.modules[ns], $B.imported[ns]
 }
 
-$B.$list_comp = function(env){
+$B.$list_comp = function(items){
     // Called for list comprehensions
-    // "env" is a list of [local_name, local_ns] lists for all the enclosing
-    // namespaces
-    var $ix = $B.UUID()
-    var $py = "x"+$ix+"=[]\n", indent = 0
-    for(var $i=2, _len_$i = arguments.length; $i < _len_$i;$i++){
-        $py += ' '.repeat(indent)
-        $py += arguments[$i]+':\n'
+    // items[0] is the Python code for the comprehension expression
+    // items[1:] is the loops and conditions in the comprehension
+    // For instance in [ x*2 for x in A if x>2 ],
+    // items is ["x*2", "for x in A", "if x>2"]
+    var ix = $B.UUID()
+    var py = "x"+ix+"=[]\n", indent = 0
+    for(var i=1, len = items.length; i < len;i++){
+        py += ' '.repeat(indent)
+        var item = items[i]
+        item = item.replace(/\s*$/, '').replace(/\s+/g, ' ')
+        py += item+':\n'
         indent += 4
     }
-    $py += ' '.repeat(indent)
-    $py += 'x'+$ix+'.append('+arguments[1].join('\n')+')\n'
+    py += ' '.repeat(indent)
+    py += 'x'+ix+'.append('+items[0]+')\n'
     
-    // Create the variables for enclosing namespaces, they may be referenced
-    // in the comprehension
-    for(var i=0;i<env.length;i++){
-        var sc_id = '$locals_'+env[i][0].replace(/\./,'_')
-        eval('var '+sc_id+'=env[i][1]')
-    }
-    var local_name = env[0][0]
-    var module_env = env[env.length-1]
-    var module_name = module_env[0]
-
-    var listcomp_name = 'lc'+$ix
-
-    var $root = $B.py2js($py,module_name,listcomp_name,local_name,
-        $B.line_info)
-    
-    $root.caller = $B.line_info
-
-    var $js = $root.to_js()
-    
-    try{
-        eval($js)
-        var res = eval('$locals_'+listcomp_name+'["x"+$ix]')
-    }
-    catch(err){throw $B.exception(err)}
-    finally{clear(listcomp_name)}
-
-    return res
+    return [py,ix]
 }
 
-$B.$dict_comp = function(env){
+$B.$dict_comp = function(module_name, parent_block_id, items, line_num){
     // Called for dict comprehensions
-    // "env" is a list of [local_name, local_ns] lists for all the enclosing
-    // namespaces
+    // items[0] is the Python code for the comprehension expression
+    // items[1:] is the loops and conditions in the comprehension
+    // For instance in { x:x*2 for x in A if x>2 },
+    // items is ["x:x*2", "for x in A", "if x>2"]
 
-    var $ix = $B.UUID()
-    var $res = 'res'+$ix
-    var $py = $res+"={}\n"
-    var indent=0
-    for(var $i=2, _len_$i = arguments.length; $i < _len_$i;$i++){
-        $py+=' '.repeat(indent)
-        $py += arguments[$i]+':\n'
-        indent += 4
+    var ix = $B.UUID(),
+        res = 'res'+ix,
+        py = res+"={}\n", // Python code
+        indent=0
+    for(var i=1, len=items.length;i<len;i++){
+        py += '    '.repeat(indent)
+        var item = items[i].replace(/\s+$/,'').replace(/\n/g, ' ')
+        py += item+':\n'
+        indent++
     }
-    $py+=' '.repeat(indent)
-    $py += $res+'.update({'+arguments[1].join('\n')+'})'
-
-    // Create the variables for enclosing namespaces, they may be referenced
-    // in the comprehension
-    for(var i=0;i<env.length;i++){
-        var sc_id = '$locals_'+env[i][0].replace(/\./,'_')
-        eval('var '+sc_id+'=env[i][1]')
-    }
-    var local_name = env[0][0]
-    var module_env = env[env.length-1]
-    var module_name = module_env[0]
-
-    var dictcomp_name = 'dc'+$ix
+    py += '    '.repeat(indent) + res + '.update({'+items[0]+'})'
     
-    var $root = $B.py2js($py,module_name,dictcomp_name,local_name,
-        $B.line_info)
-    $root.caller = $B.line_info
-
-    var $js = $root.to_js()
-    eval($js)
-
-    var res = eval('$locals_'+dictcomp_name+'["'+$res+'"]')
-
-    return res
+    var dictcomp_name = 'dc'+ix,
+        root = $B.py2js(py, module_name, dictcomp_name, parent_block_id,
+            line_num),
+        js = root.to_js()
+    js += '\nreturn $locals["'+res+'"]\n'
+    
+    js = '(function(){'+js+'})()'
+    $B.clear_ns(dictcomp_name)
+    return js
 }
 
-$B.$gen_expr = function(env){
+$B.$gen_expr = function(module_name, parent_block_id, items, line_num){
     // Called for generator expressions
     // "env" is a list of [local_name, local_ns] lists for all the enclosing
     // namespaces
-
+    
     var $ix = $B.UUID()
-    var $res = 'res'+$ix
-    var $py = $res+"=[]\n"
-    var indent=0
-    for(var $i=2, _len_$i = arguments.length; $i < _len_$i;$i++){
-        $py+=' '.repeat(indent)
-        $py += arguments[$i].join(' ')+':\n'
+    var py = 'def ge'+$ix+'():\n'
+    var indent=1
+    for(var i=1, len = items.length; i < len;i++){
+        py += ' '.repeat(indent)
+        var item = items[i].replace(/\s+$/,'').replace(/\n/g, ' ')
+        py += item+':\n'
         indent += 4
     }
-    $py+=' '.repeat(indent)
-    $py += $res+'.append('+arguments[1].join('\n')+')'
-    
-    // Create the variables for enclosing namespaces, they may be referenced
-    // in the expression
-    for(var i=0;i<env.length;i++){
-        var sc_id = '$locals_'+env[i][0].replace(/\./,'_')
-        eval('var '+sc_id+'=env[i][1]')
-    }
-    var local_name = env[0][0]
-    var module_env = env[env.length-1]
-    var module_name = module_env[0]
+    py+=' '.repeat(indent)
+    py += 'yield '+items[0]
     
     var genexpr_name = 'ge'+$ix
-
-    var $root = $B.py2js($py,module_name,genexpr_name,local_name,
-        $B.line_info)
-    var $js = $root.to_js()
     
-    eval($js)
+    var root = $B.py2js(py, module_name, genexpr_name, parent_block_id,
+        line_num)
     
-    var $res1 = eval('$locals_ge'+$ix)["res"+$ix]
-
-    var $GenExprDict = {
-        __class__:$B.$type,
-        __name__:'generator',
-        toString:function(){return '(generator)'}
-    }
-    $GenExprDict.__mro__ = [$GenExprDict,_b_.object.$dict]
-    $GenExprDict.__iter__ = function(self){return self}
-    $GenExprDict.__next__ = function(self){
-        self.$counter += 1
-        if(self.$counter==self.value.length){
-            throw _b_.StopIteration('')
-        }
-        return self.value[self.$counter]
-    }
-    $GenExprDict.__str__ = function(self){
-        if(self===undefined) return "<class 'generator'>"
-        return '<generator object <genexpr>>'
-    }
-    $GenExprDict.$factory = $GenExprDict
-    var $res2 = {value:$res1,__class__:$GenExprDict,$counter:-1}
-    $res2.toString = function(){return 'ge object'}
-    return $res2
+    var js = root.to_js()
+    var lines = js.split('\n')
+    
+    var header = 'for(var i=0;i<$B.frames_stack.length;i++){\n'+
+        '    var frame = $B.frames_stack[i];\n'+
+        '    eval("var $locals_"+frame[2].replace(/\\./g,"_")+" = frame[3]")\n'+
+        '}\n'
+    
+    lines.splice(2, 0, header)
+    
+    js = lines.join('\n')
+    js += '\nvar $res = $locals_'+genexpr_name+'["'+genexpr_name+'"]();\n'+
+        '$res.is_gen_expr=true;\nreturn $res\n'
+    js = '(function(){'+js+'})()\n'
+    
+    return js
 }
 
-$B.$lambda = function(env,args,body){
-    // Called for anonymous functions (lambda)
-    // "env" is a list of [local_name, local_ns] lists for all the enclosing
-    // namespaces
-    // "args" are the arguments, "body" is the function body
-
-    var rand = $B.UUID()
-    var $res = 'lambda_'+$B.lambda_magic+'_'+rand
-    var $py = 'def '+$res+'('+args+'):\n'
-    $py += '    return '+body
-    
-    // Create the variables for enclosing namespaces, they may be referenced
-    // in the function
-    for(var i=0;i<env.length;i++){
-        var sc_id = '$locals_'+env[i][0].replace(/\./,'_')
-        eval('var '+sc_id+'=env[i][1]')
+$B.clear_ns = function(name){
+    // Remove name from __BRYTHON__.mdoules, and all the keys that start with name
+    //delete __BRYTHON__.modules[name]
+    var keys = [],
+        len = name.length
+    for(var key in __BRYTHON__.modules){
+        if(key.substr(0, len)==name && key!==name){keys.push(key)}
     }
-    var local_name = env[0][0]
-    var module_env = env[env.length-1]
-    var module_name = module_env[0]
-
-    var lambda_name = 'lambda'+rand
-    
-    var $js = $B.py2js($py,module_name,lambda_name,local_name).to_js()
-    
-    eval($js)
-    
-    var $res = eval('$locals_'+lambda_name+'["'+$res+'"]')
-
-    $res.__module__ = module_name
-    $res.__name__ = '<lambda>'
-    return $res
+    for(var i=0; i<keys.length;i++){
+        delete __BRYTHON__.modules[keys[i]]
+        delete __BRYTHON__.bound[keys[i]]
+        delete __BRYTHON__.type[keys[i]]
+    }
 }
-
 // Function used to resolve names not defined in Python source
 // but introduced by "from A import *" or by exec
 
 $B.$search = function(name, global_ns){
-    var res = global_ns[name]
-    //if(res===undefined){console.log('no '+name+' in global ns '+$B.keys(global_ns))}
-    return res !== undefined ? res : $B.$NameError(name)
+    // search in local and global namespaces
+    var frame = $B.last($B.frames_stack)
+    if(frame[1][name]!==undefined){return frame[1][name]}
+    else if(frame[3][name]!==undefined){return frame[3][name]}
+    else if(_b_[name]!==undefined){return _b_[name]}
+    else{
+        if(frame[0]==frame[2]){throw _b_.NameError(name)}
+        else{
+            console.log(name,'not found in',frame)
+            throw _b_.UnboundLocalError("local variable '"+name+
+                "' referenced before assignment")}
+    }
 }
+
+$B.$global_search = function(name){
+    // search in global namespace
+    var frame = $B.last($B.frames_stack)
+    if(frame[3][name]!==undefined){return frame[3][name]}
+    else{
+        throw _b_.NameError(name)
+    }
+}
+
+$B.$local_search = function(name){
+    // search in local namespace
+    var frame = $B.last($B.frames_stack)
+    if(frame[1][name]!==undefined){return frame[1][name]}
+    else{
+        throw _b_.UnboundLocalError("local variable '"+name+
+                "' referenced before assignment")
+    }
+}
+
+$B.$check_def = function(name, value){
+    // Check if value is not undefined
+    if(value!==undefined){return value}
+    throw _b_.NameError(name)
+}
+
+$B.$check_def_local = function(name, value){
+    // Check if value is not undefined
+    if(value!==undefined){return value}
+    throw _b_.UnboundLocalError("local variable '"+name+
+        "' referenced before assignment")
+}
+
+$B.$check_def_free = function(name, value){
+    // Check if value is not undefined
+    if(value!==undefined){return value}
+    var res
+    for(var i=$B.frames_stack.length-1;i>=0;i--){
+        var frame = $B.frames_stack[i]
+        res = $B.frames_stack[i][1][name]
+        if(res!==undefined){return res}
+        res = $B.frames_stack[i][3][name]
+        if(res!==undefined){return res}
+    }
+    throw _b_.NameError("free variable '"+name+
+        "' referenced before assignment in enclosing scope")
+}
+
 
 // transform native JS types into Brython types
 $B.$JS2Py = function(src){
@@ -460,21 +348,71 @@ $B.$JS2Py = function(src){
     if(klass!==undefined){
         if(klass===_b_.list.$dict){
             for(var i=0, _len_i = src.length; i< _len_i;i++) src[i] = $B.$JS2Py(src[i])
+        }else if(klass===$B.JSObject.$dict){
+            src = src.js
+        }else{
+            return src
         }
-        return src
     }
     if(typeof src=="object"){
-        if($B.$isNode(src)) return $B.$DOMNode(src)
-        if($B.$isEvent(src)) return $B.DOMEvent(src)
-        if(src.constructor===Array||$B.$isNodeList(src)){
-            var res = []
-            for(var i=0, _len_i = src.length; i < _len_i;i++) res.push($B.$JS2Py(src[i]))
+        if($B.$isNode(src)) return $B.DOMNode(src)
+        if($B.$isEvent(src)) return $B.$DOMEvent(src)
+        if((Array.isArray(src) &&Object.getPrototypeOf(src)===Array.prototype)||
+            $B.$isNodeList(src)){
+            var res = [], pos=0
+            for(var i=0,_len_i=src.length;i<_len_i;i++) res[pos++]=$B.$JS2Py(src[i])
             return res
         }
     }
     return $B.JSObject(src)
 }
 
+// Functions used if we can guess the type from lexical analysis
+$B.list_key = function(obj, key){
+    key = $B.$GetInt(key)
+    if(key<0){key += obj.length}
+    var res = obj[key]
+    if(res===undefined){throw _b_.IndexError("list index out of range")}
+    return res
+}
+
+$B.list_slice = function(obj, start, stop){
+    if(start===null){start=0}
+    else{
+        start=$B.$GetInt(start)
+        if(start<0){start=Math.max(0, start+obj.length)}
+    }
+    if(stop===null){return obj.slice(start)}
+    stop = $B.$GetInt(stop)
+    if(stop<0){stop=Math.max(0, stop+obj.length)}
+    return obj.slice(start, stop)
+}
+
+$B.list_slice_step = function(obj, start, stop, step){
+    if(step===null||step==1){return $B.list_slice(obj,start,stop)}
+
+    if(step==0){throw _b_.ValueError("slice step cannot be zero")}
+    step = $B.$GetInt(step)
+
+    if(start===null){start = step >=0 ? 0 : obj.length-1}
+    else{
+        start=$B.$GetInt(start)
+        if(start<0){start=Math.min(0, start+obj.length)}
+    }
+    if(stop===null){stop = step >= 0 ? obj.length : -1}
+    else{
+        stop = $B.$GetInt(stop)
+        if(stop<0){stop=Math.max(0, stop+obj.length)}
+    }
+    
+    var res=[], len=obj.length
+    if(step>0){
+        for(var i=start;i<stop;i+=step){res.push(obj[i])}
+    }else{
+        for(var i=start;i>stop;i+=step){res.push(obj[i])}    
+    }
+    return res
+}
 
 // get item
 function index_error(obj){
@@ -490,7 +428,8 @@ $B.$getitem = function(obj, item){
             else{index_error(obj)}
         }
     }
-    item=$B.$GetInt(item)
+    
+    try{item=$B.$GetInt(item)}catch(err){}
     if((Array.isArray(obj) || typeof obj=='string')
         && typeof item=='number'){
         item = item >=0 ? item : obj.length+item
@@ -500,8 +439,76 @@ $B.$getitem = function(obj, item){
     return _b_.getattr(obj,'__getitem__')(item)
 }
 
+// Set list key or slice
+$B.set_list_key = function(obj,key,value){
+    try{key = $B.$GetInt(key)}
+    catch(err){
+        if(_b_.isinstance(key, _b_.slice)){
+            var s = _b_.slice.$dict.$conv_for_seq(key, obj.length)
+            return $B.set_list_slice_step(obj,s.start,
+                s.stop,s.step,value)
+        }
+    }
+    if(key<0){key+=obj.length}
+    if(obj[key]===undefined){
+        console.log(obj, key)
+        throw _b_.IndexError('list assignment index out of range')
+    }
+    obj[key]=value
+}
+
+$B.set_list_slice = function(obj,start,stop,value){
+    if(start===null){start=0}
+    else{
+        start=$B.$GetInt(start)
+        if(start<0){start=Math.max(0, start+obj.length)}
+    }
+    if(stop===null){stop=obj.length}
+    stop = $B.$GetInt(stop)
+    if(stop<0){stop=Math.max(0, stop+obj.length)}
+    var res = _b_.list(value)
+    obj.splice.apply(obj,[start, stop-start].concat(res))
+}
+
+$B.set_list_slice_step = function(obj,start,stop,step,value){
+    if(step===null||step==1){return $B.set_list_slice(obj,start,stop,value)}
+
+    if(step==0){throw _b_.ValueError("slice step cannot be zero")}
+    step = $B.$GetInt(step)
+
+    if(start===null){start = step>0 ? 0 : obj.length-1}
+    else{
+        start=$B.$GetInt(start)
+        if(start<0){start=Math.min(0, start+obj.length)}
+    }
+    
+    if(stop===null){stop = step>0 ? obj.length : -1}
+    else{
+        stop = $B.$GetInt(stop)
+        if(stop<0){stop=Math.max(0, stop+obj.length)}
+    }
+    
+    var repl = _b_.list(value),j=0,test,nb=0
+    if(step>0){test = function(i){return i<stop}}
+    else{test = function(i){return i>stop}}
+
+    // Test if number of values in the specified slice is equal to the
+    // length of the replacement sequence
+    for(var i=start;test(i);i+=step){nb++}
+    if(nb!=repl.length){
+            throw _b_.ValueError('attempt to assign sequence of size '+
+                repl.length+' to extended slice of size '+nb)
+    }
+
+    for(var i=start;test(i);i+=step){
+        obj[i]=repl[j]
+        j++
+    }
+}
+
+
 $B.$setitem = function(obj,item,value){
-    if(Array.isArray(obj) && typeof item=='number'){
+    if(Array.isArray(obj) && typeof item=='number' && !_b_.isinstance(obj,_b_.tuple)){
         if(item<0){item+=obj.length}
         if(obj[item]===undefined){throw _b_.IndexError("list assignment index out of range")}
         obj[item]=value
@@ -516,19 +523,23 @@ $B.$setitem = function(obj,item,value){
 $B.augm_item_add = function(obj,item,incr){
     if(Array.isArray(obj) && typeof item=="number" &&
         obj[item]!==undefined){
-        obj[item]+=incr
-        return
+            if(Array.isArray(obj[item]) && Array.isArray(incr)){
+                obj[item] = obj[item].concat(incr)
+                return
+            }else if(typeof obj[item]=='string' && typeof incr=='string'){
+                obj[item] += incr
+                return
+            }
     }
     var ga = _b_.getattr
     try{
         var augm_func = ga(ga(obj,'__getitem__')(item),'__iadd__')
-        console.log('has augmfunc')
     }catch(err){
         ga(obj,'__setitem__')(item,
             ga(ga(obj,'__getitem__')(item),'__add__')(incr))
         return
     }
-    augm_func(value)
+    augm_func(incr)
 }
 var augm_item_src = ''+$B.augm_item_add
 var augm_ops = [['-=','sub'],['*=','mul']]
@@ -538,57 +549,44 @@ for(var i=0, _len_i = augm_ops.length; i < _len_i;i++){
     eval('$B.augm_item_'+augm_ops[i][1]+'='+augm_code)
 }
 
-// exceptions
-$B.$raise= function(){
-    // Used for "raise" without specifying an exception
-    // If there is an exception in the stack, use it, else throw a simple Exception
-    var es = $B.exception_stack
-    if(es.length>0) throw es[es.length-1]
-    throw Error('Exception')
-}
-
-$B.$syntax_err_line = function(module,pos) {
-    // map position to line number
-    var pos2line = {}
-    var lnum=1
-    var src = $B.$py_src[module]
-    var line_pos = {1:0}
-    for(var i=0, _len_i = src.length; i < _len_i;i++){
-        pos2line[i]=lnum
-        if(src.charAt(i)=='\n'){lnum+=1;line_pos[lnum]=i}
+// function used if a function call has an argument **kw
+$B.extend = function(fname, arg, mapping){
+    var it = _b_.iter(mapping), getter = _b_.getattr(mapping,'__getitem__')
+    while (true){
+        try{
+            var key = _b_.next(it)
+            if(typeof key!=='string'){
+                throw _b_.TypeError(fname+"() keywords must be strings")
+            }
+            if(arg[key]!==undefined){
+                throw _b_.TypeError(
+                    fname+"() got multiple values for argument '"+key+"'")
+            }
+            arg[key] = getter(key)
+        }catch(err){
+            if(_b_.isinstance(err,[_b_.StopIteration])){break}
+            throw err
+        }
     }
-    var line_num = pos2line[pos]
-    var lines = src.split('\n')
+    return arg
+}
 
-    var lib_module = module
-    if(lib_module.substr(0,13)==='__main__,exec') lib_module='__main__'
-
-    var line = lines[line_num-1]
-    var lpos = pos-line_pos[line_num]
-    while(line && line.charAt(0)==' '){
-      line=line.substr(1)
-      lpos--
+// function used if a function call has an argument *args
+$B.extend_list = function(){
+    // The last argument is the iterable to unpack
+    var res = Array.prototype.slice.call(arguments,0,arguments.length-1),
+        last = $B.last(arguments)
+    var it = _b_.iter(last)
+    while (true){
+        try{
+            res.push(_b_.next(it))
+        }catch(err){
+            if(_b_.isinstance(err,[_b_.StopIteration])){break}
+            throw err
+        }
     }
-    info = '\n    ' //+line+'\n    '
-    for(var i=0;i<lpos;i++) info+=' '
-    info += '^'
-    return info
+    return res
 }
-
-$B.$SyntaxError = function(module,msg,pos) {
-    var exc = _b_.SyntaxError(msg)
-    exc.info += $B.$syntax_err_line(module,pos)
-    throw exc
-}
-
-$B.$IndentationError = function(module,msg,pos) {
-    var exc = _b_.IndentationError(msg)
-    exc.info += $B.$syntax_err_line(module,pos)
-    throw exc
-}
-
-// function to remove internal exceptions from stack exposed to programs
-$B.$pop_exc=function(){$B.exception_stack.pop()}
 
 $B.$test_item = function(expr){
     // used to evaluate expressions with "and" or "or"
@@ -609,23 +607,20 @@ $B.$is_member = function(item,_set){
 
     // use __contains__ if defined
     try{f = _b_.getattr(_set,"__contains__")}
-    catch(err){$B.$pop_exc()}
+    catch(err){}
 
     if(f) return f(item)
 
     // use __iter__ if defined
     try{_iter = _b_.iter(_set)}
-    catch(err){$B.$pop_exc()}
+    catch(err){}
     if(_iter){
         while(1){
             try{
                 var elt = _b_.next(_iter)
                 if(_b_.getattr(elt,"__eq__")(item)) return true
             }catch(err){
-                if(err.__name__=="StopIteration"){
-                    $B.$pop_exc()
-                    return false
-                }
+                if(err.__name__=="StopIteration") return false
                 throw err
             }
         }
@@ -634,7 +629,6 @@ $B.$is_member = function(item,_set){
     // use __getitem__ if defined
     try{f = _b_.getattr(_set,"__getitem__")}
     catch(err){
-        $B.$pop_exc()
         throw _b_.TypeError("'"+$B.get_class(_set).__name__+"' object is not iterable")
     }
     if(f){
@@ -671,9 +665,16 @@ $B.stdout = {
 }
 
 $B.stdin = {
-    __class__:$io,
-    //fix me
-    read: function(size){return ''}
+    __class__: $io,
+    __original__:true,
+    closed: false,
+    len:1, pos:0,
+    read: function () {
+        return '';
+    },
+    readline: function() {
+        return '';
+    }
 }
 
 $B.jsobject2pyobject=function(obj){
@@ -686,10 +687,20 @@ $B.jsobject2pyobject=function(obj){
         return _b_.False
     }
 
+    if(typeof obj==='object' && !Array.isArray(obj) &&
+        obj.__class__===undefined){
+        // transform JS object into a Python dict
+        var res = _b_.dict()
+        for(var attr in obj){
+           res.$string_dict[attr] = $B.jsobject2pyobject(obj[attr])
+        }
+        return res
+    }
+
     if(_b_.isinstance(obj,_b_.list)){
-        var res = []
+        var res = [], pos=0
         for(var i=0, _len_i = obj.length; i < _len_i;i++){
-            res.push($B.jsobject2pyobject(obj[i]))
+            res[pos++]=$B.jsobject2pyobject(obj[i])
         }
         return res
     }
@@ -708,15 +719,6 @@ $B.jsobject2pyobject=function(obj){
        return _b_.iter(obj.data)
     }
 
-    if(typeof obj==='object' && obj.__class__===undefined){
-        // transform JS object into a Python dict
-        var res = _b_.dict()
-        for(var attr in obj){
-            _b_.getattr(res,'__setitem__')(attr,$B.jsobject2pyobject(obj[attr]))
-        }
-        return res
-    }
-
     return $B.JSObject(obj)
 }
 
@@ -731,12 +733,11 @@ $B.pyobject2jsobject=function (obj){
         return false
     }
 
-    if(_b_.isinstance(obj,[_b_.int,_b_.str])) return obj
-    if(_b_.isinstance(obj,_b_.float)) return obj.value
+    if(_b_.isinstance(obj,[_b_.int,_b_.float, _b_.str])) return obj
     if(_b_.isinstance(obj,[_b_.list,_b_.tuple])){
-        var res = []
+        var res = [], pos=0
         for(var i=0, _len_i = obj.length; i < _len_i;i++){
-           res.push($B.pyobject2jsobject(obj[i]))
+           res[pos++]=$B.pyobject2jsobject(obj[i])
         }
         return res
     }
@@ -751,10 +752,10 @@ $B.pyobject2jsobject=function (obj){
 
     if (_b_.hasattr(obj, '__iter__')) {
        // this is an iterator..
-       var _a=[]
+       var _a=[], pos=0
        while(1) {
           try {
-           _a.push($B.pyobject2jsobject(_b_.next(obj)))
+           _a[pos++]=$B.pyobject2jsobject(_b_.next(obj))
           } catch(err) {
             if (err.__name__ !== "StopIteration") throw err
             break
@@ -769,31 +770,7 @@ $B.pyobject2jsobject=function (obj){
     if (_b_.hasattr(obj, '__dict__')) {
        return $B.pyobject2jsobject(_b_.getattr(obj, '__dict__'))
     }
-    throw _b_.TypeError(str(obj)+' is not JSON serializable')
-}
-
-
-// override IDBObjectStore's add, put, etc functions since we need
-// to convert python style objects to a js object type
-
-if (window.IDBObjectStore !== undefined) {
-    window.IDBObjectStore.prototype._put=window.IDBObjectStore.prototype.put
-    window.IDBObjectStore.prototype.put=function(obj, key) {
-       var myobj = $B.pyobject2jsobject(obj)
-       return window.IDBObjectStore.prototype._put.apply(this, [myobj, key]);
-    }
-    
-    window.IDBObjectStore.prototype._add=window.IDBObjectStore.prototype.add
-    window.IDBObjectStore.prototype.add=function(obj, key) {
-       var myobj= $B.pyobject2jsobject(obj);
-       return window.IDBObjectStore.prototype._add.apply(this, [myobj, key]);
-    }
-}
-
-if (window.IDBRequest !== undefined) {
-    window.IDBRequest.prototype.pyresult=function() {
-       return $B.jsobject2pyobject(this.result);
-    }
+    throw _b_.TypeError(_b_.str(obj)+' is not JSON serializable')
 }
 
 $B.set_line = function(line_num,module_name){
@@ -825,21 +802,16 @@ $B.$iterator_class = function(name){
         __name__:name,
     }
 
-    res.__repr__=function(self){
-       return name + '('+ _b_.getattr(as_list(self), '__repr__')() + ')'
-    }
-
-    res.__str__ = res.toString = res.__repr__
     res.__mro__ = [res,_b_.object.$dict]
 
     function as_array(s) {
-       var _a=[]
+       var _a=[], pos=0
        var _it = _b_.iter(s)
        while (1) {
          try {
-              _a.push(_b_.next(_it))
+              _a[pos++]=_b_.next(_it)
          } catch (err) {
-              if (err.__name__ == 'StopIteration') break
+              if (err.__name__ == 'StopIteration'){break}
          }
        }
        return _a
@@ -896,6 +868,11 @@ $B.$iterator_class = function(name){
 $B.$CodeDict = {__class__:$B.$type,__name__:'code'}
 $B.$CodeDict.__mro__ = [$B.$CodeDict,_b_.object.$dict]
 
+function _code(){}
+_code.__class__ = $B.$factory
+_code.$dict = $B.$CodeDict
+$B.$CodeDict.$factory = _code
+
 function $err(op,klass,other){
     var msg = "unsupported operand type(s) for "+op
     msg += ": '"+klass.__name__+"' and '"+$B.get_class(other).__name__+"'"
@@ -928,7 +905,7 @@ $B.set_func_names = function(klass){
     var name = klass.__name__
     for(var attr in klass){
         if(typeof klass[attr] == 'function'){
-            klass[attr].__name__ = name+'.'+attr
+            klass[attr].$infos = {__name__ : name+'.'+attr}
         }
     }
 }
@@ -938,32 +915,337 @@ $B.set_func_names = function(klass){
 $B.UUID=function() {return $B.$py_UUID++}
 
 $B.InjectBuiltins=function() {
-   var _str=["var _b_=$B.builtins"]
-   for(var $b in $B.builtins) _str.push('var ' + $b +'=_b_["'+$b+'"]')
+   var _str=["var _b_=$B.builtins"], pos=1
+   for(var $b in $B.builtins) _str[pos++]='var ' + $b +'=_b_["'+$b+'"]'
    return _str.join(';')
 }
 
 $B.$GetInt=function(value) {
-  // convert value to an integer,
-  if(typeof value=="number"){return value}
-  if (_b_.isinstance(value, _b_.int)) return value
-  try {var v=_b_.getattr(value, '__int__')(); return v}catch(e){}
-  try {var v=_b_.getattr(value, '__index__')(); return v}catch(e){}
+  // convert value to an integer
+  if(typeof value=="number"||value.constructor===Number){return value}
+  else if(typeof value==="boolean"){return value ? 1 : 0}
+  else if (_b_.isinstance(value, _b_.int)) {return value}
+  else if (_b_.isinstance(value, _b_.float)) {return value.valueOf()}
+  if(value.__class__!==$B.$factory){
+      try {var v=_b_.getattr(value, '__int__')(); return v}catch(e){}
+      try {var v=_b_.getattr(value, '__index__')(); return v}catch(e){}
+  }
+  throw _b_.TypeError("'"+$B.get_class(value).__name__+
+      "' object cannot be interpreted as an integer")
+}
 
-  return value
+$B.PyNumber_Index = function(item){
+    switch(typeof item){
+        case "boolean":
+            return item ? 1 : 0
+        case "number":
+            return item
+        case "object":
+            if(item.__class__===$B.LongInt.$dict){return item}
+            var method = _b_.getattr(item, '__index__', null)
+            if(method!==null){
+                method = typeof method=='function' ? 
+                            method : 
+                            _b_.getattr(method, '__call__')
+                return $B.int_or_bool(method)
+            }
+        default:
+            throw _b_.TypeError("'"+$B.get_class(item).__name__+
+                "' object cannot be interpreted as an integer")
+    }
+}
+
+$B.int_or_bool = function(v){
+    switch(typeof v){
+        case "boolean":
+            return v ? 1 : 0
+        case "number":
+            return v
+        case "object":
+            if(v.__class__===$B.LongInt.$dict){return v}
+            else{
+                throw _b_.TypeError("'"+$B.get_class(v).__name__+
+                "' object cannot be interpreted as an integer")
+            }
+        default:
+            throw _b_.TypeError("'"+$B.get_class(v).__name__+
+                "' object cannot be interpreted as an integer")
+    }
+}
+
+$B.int_value = function(v){
+    // If v is an integer, return v
+    // If it's a boolean, return 0 or 1
+    // If it's a complex with v.imag=0, return int_value(v.real)
+    // If it's a float that equals an integer, return it
+    // Else throw ValueError
+    try{return $B.int_or_bool(v)}
+    catch(err){
+        if(_b_.isinstance(v, _b_.complex) && v.imag==0){
+            return $B.int_or_bool(v.real)
+        }else if(isinstance(v, _b_.float) && v==Math.floor(v)){
+            return Math.floor(v)
+        }else{
+            throw _b_.TypeError("'"+$B.get_class(v).__name__+
+                "' object cannot be interpreted as an integer")
+        }
+    }
 }
 
 $B.enter_frame = function(frame){
+    // Enter execution frame : save on top of frames stack
+    //console.log('enter frame', frame[0])
+    //if($B.frames_stack===undefined){alert('frames stack udef')}
     $B.frames_stack.push(frame)
 }
 
-$B.leave_frame = function(){
-    // We must leave at least the frame for the main program
-    if($B.frames_stack.length>1){
-        var frame = $B.frames_stack.pop()
-        //delete $B.modules[frame[0]],$B.$py_src[frame[0]]
+$B.leave_frame = function(arg){
+    // Leave execution frame
+    //console.log('leave frame', arg)
+    if($B.frames_stack.length==0){console.log('empty stack');return}
+    /*
+    var last = $B.last($B.frames_stack)
+    if(last[0]!=arg){
+        // print a warning if arg is not on top of frames stack
+        console.log('leave error', 'leaving', arg, 'last on stack', last[0])
+    }
+    */
+    $B.frames_stack.pop()
+    //console.log($B.frames_stack.length, 'frames remain')
+}
+
+$B.$profile_data = {}
+$B.$profile = (function(profile) {
+    var call_times={},      // indexed by function-hash,
+                            //   - given a function it contains a stack with an element for
+                            //     each currently running call of the function
+                            //     the element is a quadruple:
+                            //         start of the function call
+                            //         hash of the caller (from where the function was invoked)
+                            //         cumulated time spent in function not-including subcalls up to last subcall
+                            //         time when the function was last resumed after a subcall (or the time when
+                            //         started runnig if there were no subcalls)
+        _START = 0,         //  used as indices to access elements of call_times
+        _CALLER = 1,
+        _CUMULATED = 2,
+        _LAST_RESUMED =3,
+        call_stack=[],      // contains hashes of the currently running functions (in call-order)
+        profile_start=null, // Time when profiling started (or restarted after being paused)
+        active=false,       // true when collecting data
+        paused=false,       // true when paused
+        cumulated=0;        // cumulated time of data collection from first start until last restart after a pause.
+
+    var _fhash = function(module,fname,line){return module+"."+fname+":"+line;}
+    var _hash = function(module,line){return module+":"+line;}
+    var _is_recursive = function(h) {
+        for(i=0;i<call_stack.length;i++)
+            if (call_stack[i] == h) return true;
+        return false;
+    }
+
+
+
+
+    var $profile = {
+        'call':function(module,fname,line,caller){
+            if ($B.profile > 1 && active) {
+                var ctime = new Date();
+                var h = _fhash(module,fname,line)
+                if (!(h in call_times)) {call_times[h]=[];}
+                if (call_stack.length > 0) {
+                    in_func = call_stack[call_stack.length-1];
+                    func_stack = call_times[in_func]
+                    inner_most_call = func_stack[func_stack.length-1];
+                    inner_most_call[_CUMULATED] += (ctime-inner_most_call[_LAST_RESUMED])
+                }
+                call_times[h].push([ctime,caller,0,ctime]) // start time, caller hash, duration without subcalls, start_of_last_subcall
+                call_stack.push(h)
+            }
+        },
+        'return':function(){
+            if ($B.profile > 1 && active) {
+                var h = call_stack.pop()
+                if (h in call_times) {
+                    var t_end = new Date();
+                    var data = call_times[h].pop();
+                    t_start = data[_START]
+                    caller = data[_CALLER]
+                    t_duration = t_end-t_start;
+                    t_in_func = data[_CUMULATED] + (t_end-data[_LAST_RESUMED]);
+                    if (!(h in profile.call_times)) {
+                        profile.call_times[h]=0;
+                        profile.call_times_proper[h]=0;
+                        profile.call_counts[h]=0;
+                        profile.call_counts_norec[h]=0;
+                        profile.callers[h]={};
+                    }
+                    profile.call_times[h]+=t_duration;
+                    profile.call_times_proper[h]+=t_in_func;
+                    profile.call_counts[h]+=1;
+                    if (!(caller in profile.callers[h])) {
+                        profile.callers[h][caller]=[0,0,0,0]
+                    }
+                    if (! _is_recursive(h) ) {
+                        profile.call_counts_norec[h]+=1;
+                        profile.callers[h][caller][3]++;       // Nuber norec calls (for given caller)
+                    }
+                    profile.callers[h][caller][0]+=t_duration; // Total time including subcalls (for given caller)
+                    profile.callers[h][caller][1]+=t_in_func;  // Total time excluding subcalls (for given caller)
+                    profile.callers[h][caller][2]++;           // Nuber of calls (for given caller)
+
+                    if ( call_stack.length > 0) {              // We are returning into a function call, need to update
+                                                            // its last resume time
+                        in_func = call_stack[call_stack.length-1];
+                        func_stack = call_times[in_func];
+                        inner_most_call = func_stack[func_stack.length-1];
+                        inner_most_call[_LAST_RESUMED] = new Date();
+                    }
+                }
+            }
+        },
+        'count':function(module,line){
+            if (active) {
+                var h = _hash(module,line);
+                if (!(h in profile.line_counts)) { profile.line_counts[h]=0;}
+                profile.line_counts[h]++;
+            }
+        },
+        'pause':function() {
+            if (active) {
+                elapsed =  (new Date())-profile_start
+                cumulated += elapsed
+                active=false
+                paused=true
+            }
+        },
+        'start':function() {
+            if ($B.profile > 0) {
+                if (! paused ) $B.$profile.clear();
+               else {paused = false;}
+               active=true
+               profile_start = new Date()
+            }
+
+        },
+        'stop':function() {
+            if (active || paused) {
+                profile.profile_duration = ((new Date())-profile_start)+cumulated
+                active=false
+                paused=false
+            }
+        },
+        'clear':function(){
+            cumulated = 0;
+            profile.line_counts={};
+            profile.call_times={};
+            profile.call_times_proper={};
+            profile.call_counts={};
+            profile.call_counts_norec={};
+            profile.callers={};
+            active = false;
+            paused = false;
+        },
+        'status':function() {
+            if ($B.profile <= 0) return "Disabled";
+            if (active) return "Collecting data: active";
+            else if (paused) return "Collecting data: paused";
+            else return "Stopped";
+        },
+    }
+    return $profile;
+})($B.$profile_data)
+
+var min_int=Math.pow(-2, 53), max_int=Math.pow(2,53)-1
+
+$B.is_safe_int = function(){
+    for(var i=0;i<arguments.length;i++){
+        var arg = arguments[i]
+        if(arg<min_int || arg>max_int){return false}
+    }
+    return true
+}
+
+$B.add = function(x,y){
+    var z = x+y
+    if(x>min_int && x<max_int && y>min_int && y<max_int
+        && z>min_int && z<max_int){return z}
+    else if((typeof x=='number' || x.__class__===$B.LongInt.$dict)
+        && (typeof y=='number' || y.__class__===$B.LongInt.$dict)){
+        if((typeof x=='number' && isNaN(x)) ||
+            (typeof y=='number' && isNaN(y))){return _b_.float('nan')}
+        var res = $B.LongInt.$dict.__add__($B.LongInt(x), $B.LongInt(y))
+        return res
+    }else{return z}
+}
+
+$B.div = function(x,y){
+    var z = x/y
+    if(x>min_int && x<max_int && y>min_int && y<max_int
+        && z>min_int && z<max_int){return z}
+    else{
+        return $B.LongInt.$dict.__truediv__($B.LongInt(x), $B.LongInt(y))
     }
 }
+
+$B.eq = function(x,y){
+    if(x>min_int && x<max_int && y>min_int && y<max_int){return x==y}
+    return $B.LongInt.$dict.__eq__($B.LongInt(x), $B.LongInt(y))
+}
+
+$B.floordiv = function(x,y){
+    var z = x/y
+    if(x>min_int && x<max_int && y>min_int && y<max_int
+        && z>min_int && z<max_int){return Math.floor(z)}
+    else{
+        return $B.LongInt.$dict.__floordiv__($B.LongInt(x), $B.LongInt(y))
+    }
+}
+
+$B.mul = function(x,y){
+    var z = x*y
+    if(x>min_int && x<max_int && y>min_int && y<max_int
+        && z>min_int && z<max_int){return z}
+    else if((typeof x=='number' || x.__class__===$B.LongInt.$dict)
+        && (typeof y=='number' || y.__class__===$B.LongInt.$dict)){
+        if((typeof x=='number' && isNaN(x)) ||
+            (typeof y=='number' && isNaN(y))){return _b_.float('nan')}
+        return $B.LongInt.$dict.__mul__($B.LongInt(x), $B.LongInt(y))
+    }else{return z}
+}
+$B.sub = function(x,y){
+    var z = x-y
+    if(x>min_int && x<max_int && y>min_int && y<max_int
+        && z>min_int && z<max_int){return z}
+    else if((typeof x=='number' || x.__class__===$B.LongInt.$dict)
+        && (typeof y=='number' || y.__class__===$B.LongInt.$dict)){
+        if((typeof x=='number' && isNaN(x)) ||
+            (typeof y=='number' && isNaN(y))){return _b_.float('nan')}
+        return $B.LongInt.$dict.__sub__($B.LongInt(x), $B.LongInt(y))
+    }else{return z}
+}
+// greater or equal
+$B.ge = function(x,y){
+    if(typeof x=='number' && typeof y== 'number'){return x>=y}
+    // a safe int is >= to a long int if the long int is negative
+    else if(typeof x=='number' && typeof y!= 'number'){return !y.pos}
+    else if(typeof x !='number' && typeof y=='number'){return x.pos===true}
+    else{return $B.LongInt.$dict.__ge__(x, y)}
+}
+$B.gt = function(x,y){
+    if(typeof x=='number' && typeof y== 'number'){return x>y}
+    // a safe int is >= to a long int if the long int is negative
+    else if(typeof x=='number' && typeof y!= 'number'){return !y.pos}
+    else if(typeof x !='number' && typeof y=='number'){return x.pos===true}
+    else{return $B.LongInt.$dict.__gt__(x, y)}
+}
+
+window.is_none = function (o) {
+    return o === undefined || o == _b_.None;
+}
+
+    window.is_none = function (o) {
+        return o === undefined || o == _b_.None;
+    }
 
 })(__BRYTHON__)
 
@@ -981,11 +1263,11 @@ if(!Array.indexOf){
 if (!String.prototype.repeat) {
   String.prototype.repeat = function(count) {
     if (count < 1) return '';
-    var result = '', pattern = this.valueOf();
+    var result = '', pattern = this.valueOf()
     while (count > 1) {
-        if (count & 1) result += pattern;
-        count >>= 1, pattern += pattern;
+        if (count & 1) result += pattern
+        count >>= 1, pattern += pattern
     }
     return result + pattern;
-  };
+  }
 }

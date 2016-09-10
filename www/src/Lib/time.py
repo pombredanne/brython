@@ -162,24 +162,7 @@ def asctime(t = None):
     return result
 
 def ctime(timestamp=None):
-    if timestamp is None:
-        timestamp = date().getTime() / 1000.
-    d = date(0)
-    d.setUTCSeconds(timestamp)
-    jan = date(d.getFullYear(), 0, 1)
-    jul = date(d.getFullYear(), 6, 1)
-    dst = int(d.getTimezoneOffset() < max(jan.getTimezoneOffset(), jul.getTimezoneOffset()))
-    d = date(0)
-    d.setUTCSeconds(timestamp + (1 + dst) * 3600)
-    weekdays = {1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 
-                5: "Fri", 6: "Sat", 0: "Sun"}
-    months = {0:'Jan',1:'Feb',2:'Mar',3:'Apr',4:'May',5:'Jun',
-        6:'Jul',7:'Aug',8:'Sep',9:'Oct',10:'Nov',11:'Dec'}
-    result = "%s %s %2d %02d:%02d:%02d %d" % (weekdays[d.getUTCDay()],
-        months[d.getUTCMonth()], d.getUTCDate(),
-        d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), 
-        d.getUTCFullYear())
-    return result
+    return asctime(localtime(timestamp))
 
 def gmtime(secs = None):
     d = date()
@@ -227,9 +210,15 @@ def time():
     return float(date().getTime()/1000)
 
 def sleep(secs):
-    start = date().getTime()
-    while date().getTime() - start < secs * 1000.:
-        pass
+    """Javascript can't block execution for a given time, expect by an
+    infinite loop that freezes the browser. It's better to raise an
+    exception"""
+    #start = date().getTime()
+    #while date().getTime() - start < secs * 1000.:
+    #    pass
+    raise NotImplementedError("Blocking functions like time.sleep() are not "
+        "supported in the browser. Use functions in module browser.timer "
+        "instead.")
 
 def strftime(_format,t = None):
     
@@ -281,7 +270,7 @@ def strftime(_format,t = None):
     res = res.replace("%b",abb_months[int(mm)-1])
     res = res.replace("%B",full_months[int(mm)-1])
     res = res.replace("%j", DoY)
-    res = res.replace("%w", w)
+    res = res.replace("%w", str(w))
     res = res.replace("%W", W)
     res = res.replace("%x", mm+'/'+dd+'/'+yy)
     res = res.replace("%X", HH24+':'+MM+':'+SS)
@@ -350,9 +339,8 @@ class struct_time:
     def __str__(self):
         return self.__repr__()
 
-def to_struct_time(ptuple):
-    # Receives a packed tuple, pass its attribute "arg" to struct_time
-    arg = ptuple.arg
+def to_struct_time(*arg):
+    arg = list(arg)
     # The tuple received from module _strptime has 7 elements, we must add
     # the rank of day in the year in the range [1, 366]
     ml = [31,28,31,30,31,30,31,31,30,31,30,31]
@@ -367,11 +355,11 @@ def to_struct_time(ptuple):
     yday += arg[2]
     arg.append(yday)
     arg.append(-1)
-    return struct_time(arg)
+    return struct_time(tuple(arg))
 
 def strptime(string, _format):
     import _strptime
-    return struct_time([_strptime._strptime_datetime(to_struct_time, string, _format)])
+    return _strptime._strptime_datetime(to_struct_time, string, _format)
 
 # All the clock_xx machinery shouldn't work in the browser so some
 # NotImplementedErrors or messages are shown

@@ -16,8 +16,8 @@ for(var i=0, _len_i = mutable_methods.length; i < _len_i;i++){
     var method = mutable_methods[i]
     $BytearrayDict[method] = (function(m){
         return function(self){
-            var args = [self.source]
-            for(var i=1, _len_i = arguments.length; i < _len_i;i++) args.push(arguments[i])
+            var args = [self.source], pos=1
+            for(var i=1, _len_i = arguments.length; i < _len_i;i++) args[pos++]=arguments[i]
             return _b_.list.$dict[m].apply(null,args)
         }
     })(method)
@@ -80,7 +80,7 @@ $BytearrayDict.append = function(self,b){
     }
     if(!isinstance(b, _b_.int)) throw _b_.TypeError("an integer is required")
     if(b>255) throw ValueError("byte must be in range(0, 256)")
-    self.source.push(b)
+    self.source[self.source.length]=b
 }
 
 $BytearrayDict.insert = function(self,pos,b){
@@ -152,13 +152,13 @@ $BytesDict.__getitem__ = function(self,arg){
         }
         if(start<0) start=self.source.length+start
         if(stop<0) stop=self.source.length+stop
-        var res = [],i=null
+        var res = [],i=null, pos=0
         if(step>0){
           if(stop<=start) return ''
-          for(i=start;i<stop;i+=step) res.push(self.source[i])
+          for(i=start;i<stop;i+=step) res[pos++]=self.source[i]
         } else {
             if(stop>=start) return ''
-            for(i=start;i>=stop;i+=step) res.push(self.source[i])
+            for(i=start;i>=stop;i+=step) res[pos++]=self.source[i]
         }
         return bytes(res)
     } else if(isinstance(arg,bool)){
@@ -171,12 +171,31 @@ $BytesDict.__gt__ = function(self,other){
     return _b_.list.$dict.__gt__(self.source,other.source)
 }
 
+$BytesDict.__hash__ = function(self) {
+  if (self === undefined) {
+     return $BytesDict.__hashvalue__ || $B.$py_next_hash--  // for hash of str$
+  }
+
+  //http://stackoverflow.com/questions/2909106/python-whats-a-correct-and-good-$
+  // this implementation for strings maybe good enough for us..
+
+  var hash=1;
+  for(var i=0, _len_i = self.length; i < _len_i; i++) {
+      hash=(101*hash + self.source[i]) & 0xFFFFFFFF
+  }
+
+  return hash
+}
+
+
 $BytesDict.__init__ = function(self,source,encoding,errors){
-    var int_list = []
+    var int_list = [], pos=0
     if(source===undefined){
         // empty list
     }else if(isinstance(source,_b_.int)){
-        for(var i=0;i<source;i++) int_list.push(0)
+        var i=source
+        //for(var i=0;i<source;i++) 
+        while(i--) int_list[pos++]=0
     }else{
         if(isinstance(source,_b_.str)){
             if(encoding===undefined)
@@ -203,6 +222,17 @@ $BytesDict.__lt__ = function(self,other){
 }
 
 $BytesDict.__mro__ = [$BytesDict,$ObjectDict]
+
+$BytesDict.__mul__ = function(){
+    var $ = $B.args('__mul__', 2, {self:null, other:null}, ['self', 'other'],
+        arguments, {}, null, null),
+        other = $B.PyNumber_Index($.other),
+        res = bytes()
+    for(var i=0; i<other; i++){
+        res.source = res.source.concat($.self.source)
+    }
+    return res
+}
 
 $BytesDict.__ne__ = function(self,other){return !$BytesDict.__eq__(self,other)}
 
@@ -240,6 +270,27 @@ $BytesDict.decode = function(self,encoding,errors){
     }
 }
 
+$BytesDict.join = function(){
+    var $ns = $B.args('join',2,{self:null,iterable:null},
+        ['self','iterable'], arguments, {}),
+        self = $ns['self'], iterable = $ns['iterable']
+    var next_func = _b_.getattr(_b_.iter(iterable), '__next__'),
+        res = bytes(),
+        empty = true
+    while(true){
+        try{
+            var item = next_func()
+            if(empty){empty=false}
+            else{res = $BytesDict.__add__(res, self)}
+            res = $BytesDict.__add__(res, item)
+        }catch(err){
+            if(isinstance(err, _b_.StopIteration)){break}
+            throw err
+        }
+    }
+    return res
+}
+
 $BytesDict.maketrans=function(from, to) {
     var _t=[]
     // make 'default' translate table
@@ -255,11 +306,37 @@ $BytesDict.maketrans=function(from, to) {
     return bytes(_t)
 }
 
+$BytesDict.split = function(){
+    var $ = $B.args('split', 2, {self:null, sep:null}, ['self', 'sep'],
+        arguments, {}, null, null),
+        res=[], start=0, stop=0
+    var seps = $.sep.source, 
+        len = seps.length, 
+        src = $.self.source,
+        blen = src.length
+        
+    while(stop<blen){
+        var match=true
+        for(var i=0;i<len && match;i++){
+            if(src[stop+i]!=seps[i]){match=false}
+        }
+        if(match){
+            res.push(bytes(src.slice(start, stop)))
+            start = stop+len
+            stop = start
+        }else{
+            stop++
+        }
+    }
+    if(match || (stop>start)){res.push(bytes(src.slice(start, stop)))}
+    return res
+}
+
 function _strip(self,cars,lr){
     if(cars===undefined){
-        cars = []
+        cars = [], pos=0
         var ws = '\r\n \t'
-        for(var i=0, _len_i = ws.length; i < _len_i; i++){cars.push(ws.charCodeAt(i))}
+        for(var i=0, _len_i = ws.length; i < _len_i; i++) cars[pos++]=ws.charCodeAt(i)
     }else if(isinstance(cars,bytes)){
         cars = cars.source
     }else{
@@ -280,6 +357,33 @@ function _strip(self,cars,lr){
 $BytesDict.lstrip = function(self,cars) {return _strip(self,cars,'l')}
 $BytesDict.rstrip = function(self,cars) {return _strip(self,cars,'r')}
 
+$BytesDict.startswith = function(){
+    var $ = $B.args('startswith', 2, {self: null, start: null}, 
+        ['self', 'start'], arguments, {}, null, null)
+    if(_b_.isinstance($.start, bytes)){
+        var res = true
+        for(var i=0;i<$.start.source.length && res;i++){
+            res = $.self.source[i]==$.start.source[i]
+        }
+        return res
+    }else if(_b_.isinstance($.start, _b_.tuple)){
+        var items = []
+        for(var i=0;i<$.start.length; i++){
+            if(_b_.isinstance($.start[i], bytes)){
+                items = items.concat($.start[i].source)
+            }else{
+                throw _b_.TypeError("startswith first arg must be bytes or "+
+                    "a tuple of bytes, not "+$B.get_class($.start).__name__)
+            }
+        }
+        var start = bytes(items)
+        return $BytesDict.startswith($.self, start)
+    }else{
+        throw _b_.TypeError("startswith first arg must be bytes or a tuple of bytes, not "+
+            $B.get_class($.start).__name__)
+    }
+}
+
 $BytesDict.strip = function(self,cars){
     var res = $BytesDict.lstrip(self,cars)
     return $BytesDict.rstrip(res,cars)
@@ -291,25 +395,26 @@ $BytesDict.translate = function(self,table,_delete) {
     else{
         throw _b_.TypeError("Type "+$B.get_class(_delete).__name+" doesn't support the buffer API")    
     }
-    var res = []
+    var res = [], pos=0
     if (isinstance(table, bytes) && table.source.length==256) {
        for (var i=0, _len_i = self.source.length; i < _len_i; i++) {
            if(_delete.indexOf(self.source[i])>-1) continue
-           res.push(table.source[self.source[i]])
+           res[pos++]=table.source[self.source[i]]
        }
     }
     return bytes(res)
 }
 
 $BytesDict.upper = function(self) {
-    var _res=[]
-    for(var i=0, _len_i = self.source.length; i < _len_i; i++) _res.push(self.source[i].toUpperCase())
+    var _res=[], pos=0
+    for(var i=0, _len_i = self.source.length; i < _len_i; i++) _res[pos++]=self.source[i].toUpperCase()
     return bytes(_res)
 }
 
-function $UnicodeEncodeError(encoding, position){
+function $UnicodeEncodeError(encoding, code_point, position){
     throw _b_.UnicodeEncodeError("'"+encoding+
-        "' codec can't encode character in position "+position)
+        "' codec can't encode character "+_b_.hex(code_point)+
+        " in position "+position)
 }
 
 function $UnicodeDecodeError(encoding, position){
@@ -320,8 +425,16 @@ function $UnicodeDecodeError(encoding, position){
 function _hex(int){return int.toString(16)}
 function _int(hex){return parseInt(hex,16)}
 
+function normalise(encoding){
+    var enc=encoding.toLowerCase()
+    if(enc.substr(0,7)=='windows'){enc='cp'+enc.substr(7)}
+    enc = enc.replace('-','') // first hyphen, like in cp-1250
+    enc = enc.replace('-','_') // second, like in iso-8859-1
+    return enc
+}
+
 function load_decoder(enc){
-    // load table from encodings/<enc>.js
+    // load table from Lib/encodings/<enc>.py
     if(to_unicode[enc]===undefined){
         load_encoder(enc)
         to_unicode[enc] = {}
@@ -332,22 +445,26 @@ function load_decoder(enc){
 }
 
 function load_encoder(enc){
-    // load table from encodings/<enc>.js
+    // load table from encodings/<enc>.py
     if(from_unicode[enc]===undefined){
-        var url = $B.brython_path
-        if(url.charAt(url.length-1)=='/'){url=url.substr(0,url.length-1)}
-        url += '/encodings/'+enc+'.js'
-        var f = _b_.open(url)
-        eval(f.$content)
+        var mod = _b_.__import__('encodings.'+enc),
+            table = mod[enc].decoding_table
+        from_unicode[enc] = {}
+        for(var i=0;i<table.length;i++){
+            from_unicode[enc][table.charCodeAt(i)] = i
+        }
     }
 }
 
 function decode(b,encoding,errors){
-    var s=''
+    var s='', enc=normalise(encoding)
 
-    switch(encoding.toLowerCase()) {
+    switch(enc) {
+      case 'utf_8':
       case 'utf-8':
       case 'utf8':
+      case 'U8':
+      case 'UTF':
         var i=0,cp
         var _int_800=_int('800'), _int_c2=_int('c2'), _int_1000=_int('1000')
         var _int_e0=_int('e0'), _int_e1=_int('e1'), _int_e3=_int('e3')
@@ -395,19 +512,16 @@ function decode(b,encoding,errors){
             }
         }
         break;
-      case 'latin-1':
+      case 'latin_1':
+      case 'windows1252':
       case 'iso-8859-1':
-      case 'windows-1252':
+      case 'iso8859-1':
+      case '8859':
+      case 'cp819':
+      case 'latin':
+      case 'latin1':
+      case 'L1':
         for(var i=0, _len_i = b.length; i < _len_i;i++) s += String.fromCharCode(b[i])
-        break;
-      case 'cp1250': 
-      case 'windows-1250': 
-        load_decoder('cp1250')
-        for(var i=0, _len_i = b.length; i < _len_i;i++){
-            var u = to_unicode['cp1250'][b[i]]
-            if(u!==undefined){s+=String.fromCharCode(u)}
-            else{s += String.fromCharCode(b[i])}
-        }
         break;
       case 'ascii':
         for(var i=0, _len_i = b.length; i < _len_i;i++){
@@ -421,15 +535,23 @@ function decode(b,encoding,errors){
         }
         break;
       default:
+        try{load_decoder(enc)}
+        catch(err){throw _b_.LookupError("unknown encoding: "+ enc)}
+        for(var i=0, _len_i = b.length; i < _len_i;i++){
+            var u = to_unicode[enc][b[i]]
+            if(u!==undefined){s+=String.fromCharCode(u)}
+            else{s += String.fromCharCode(b[i])}
+        }
+        break;
         throw _b_.LookupError("unknown encoding: "+encoding)
     }
     return s
 }
 
 function encode(s,encoding){
-    var t=[]
+    var t=[], pos=0, enc=normalise(encoding)
 
-    switch(encoding.toLowerCase()) {
+    switch(enc) {
       case 'utf-8':
       case 'utf8':
         //optimize by creating constants..
@@ -440,62 +562,58 @@ function encode(s,encoding){
         for(var i=0, _len_i = s.length; i < _len_i;i++){
             var cp = s.charCodeAt(i) // code point
             if(cp<=127){
-                t.push(cp)
+                t[pos++]=cp
             }else if(cp<_int_800){
                 var zone = Math.floor((cp-128)/64)
-                t.push(_int_c2+zone)
-                t.push(cp -64*zone)
+                t[pos++]=_int_c2+zone
+                t[pos++]=cp -64*zone
             }else if(cp<_int_1000){
                 var zone = Math.floor((cp-_int_800)/64)
-                t.push(_int_e0)
-                t.push(_int_a0+zone)
-                t.push(_int_80 + cp - _int_800 - 64 * zone)
+                t[pos++]=_int_e0
+                t[pos++]=_int_a0+zone
+                t[pos++]=_int_80 + cp - _int_800 - 64 * zone
             }else if(cp<_int_2000){
                 var zone = Math.floor((cp-_int_1000)/64)
-                t.push(_int_e1+Math.floor((cp-_int_1000)/_int_1000))
-                t.push(_int_80+zone)
-                t.push(_int_80 + cp - _int_1000 -64*zone)
+                t[pos++]=_int_e1+Math.floor((cp-_int_1000)/_int_1000)
+                t[pos++]=_int_80+zone
+                t[pos++]=_int_80 + cp - _int_1000 -64*zone
             }else if(cp<_int_D000){
                 var zone = Math.floor((cp-_int_2000)/64)
                 var zone1 = Math.floor((cp-_int_2000)/_int_1000)
-                t.push(_int_e1+Math.floor((cp-_int_1000)/_int_1000))
-                t.push(_int_80+zone-zone1*64)
-                t.push(_int_80 + cp - _int_2000 - 64 * zone)
+                t[pos++]=_int_e1+Math.floor((cp-_int_1000)/_int_1000)
+                t[pos++]=_int_80+zone-zone1*64
+                t[pos++]=_int_80 + cp - _int_2000 - 64 * zone
             }
         }
         break;
-      case 'latin-1': 
-      case 'iso-8859-1': 
-      case 'windows-1252': 
+      case 'latin1': 
+      case 'iso8859_1': 
+      case 'windows1252': 
         for(var i=0, _len_i = s.length; i < _len_i;i++){
             var cp = s.charCodeAt(i) // code point
-            if(cp<=255){t.push(cp)}
+            if(cp<=255){t[pos++]=cp}
             else{$UnicodeEncodeError(encoding,i)}
-        }
-        break;
-      case 'cp1250':
-      case 'windows-1250':
-        for(var i=0, _len_i = s.length; i < _len_i;i++){
-            var cp = s.charCodeAt(i) // code point
-            if(cp<=255){t.push(cp)}
-            else{
-                // load table to convert Unicode code point to cp1250 encoding
-                load_encoder('cp1250')
-                var res = from_unicode['cp1250'][cp]
-                if(res!==undefined){t.push(res)}
-                else{$UnicodeEncodeError(encoding,i)}
-            }
         }
         break;
       case 'ascii':
         for(var i=0, _len_i = s.length; i < _len_i;i++){
             var cp = s.charCodeAt(i) // code point
-            if(cp<=127){t.push(cp)}
+            if(cp<=127){t[pos++]=cp}
             else{$UnicodeEncodeError(encoding,i)}
         }
         break;
       default:
-        throw _b_.LookupError("unknown encoding: "+ encoding.toLowerCase())
+          try{load_encoder(enc)}
+          catch(err){throw _b_.LookupError("unknown encoding: "+ enc)}
+              
+          for(var i=0, _len_i = s.length; i < _len_i;i++){
+              var cp = s.charCodeAt(i) // code point
+              if(from_unicode[enc][cp]===undefined){
+                  $UnicodeEncodeError(encoding,cp,i)
+              }
+              t[pos++] = from_unicode[enc][cp]
+          }
+          break
     }
     return t
 }

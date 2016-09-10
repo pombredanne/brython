@@ -37,6 +37,7 @@ try:
     print(x.rindex('K'))
 except ValueError:
     pass
+assert x.split() == [x]
 assert x.split('h') == ['aZj', 'k', 'Zyuy']
 #print(x.split('h',1))
 assert x.startswith('aZ')
@@ -116,5 +117,16 @@ assert "" in "test"
 assert "" in ""
 assert not "a" in ""
 
-print("passed all tests...")
+# issue 285
+assert "ab"[1:0:-1] == 'b'
 
+# identifiers
+assert "x".isidentifier()
+assert not "x ".isidentifier()
+assert not "x;".isidentifier()
+assert not "x$".isidentifier()
+assert "André".isidentifier()
+assert "안녕하세요".isidentifier()
+assert not "1x".isidentifier()
+
+print("passed all tests...")

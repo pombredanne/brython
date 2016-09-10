@@ -12,7 +12,7 @@ __all__ = ['__import__', 'import_module', 'invalidate_caches']
 import _imp  # Just the builtin component, NOT the full Python module
 import sys
 
-from . import machinery   #fix me brython
+from . import machinery
 
 try:
     import _frozen_importlib as _bootstrap
@@ -93,5 +93,5 @@ def import_module(name, package=None):
 
 
 #need at least one import hook for importlib stuff to work.
-import basehook
+from . import basehook
 sys.meta_path.append(basehook.BaseHook())

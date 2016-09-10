@@ -34,13 +34,13 @@ a.sort_link{
 
 <script type="text/javascript" src="../src/brython_builtins.js"></script>
 <script type="text/javascript" src="../src/version_info.js"></script>
-<script type="text/javascript" src="../src/identifiers_re.js"></script>
 <script type="text/javascript" src="../src/py2js.js"></script>
 <script type="text/javascript" src="../src/py_object.js"></script>
 <script type="text/javascript" src="../src/py_type.js"></script>
 <script type="text/javascript" src="../src/py_utils.js"></script>
-<script type="text/javascript" src="../src/py_generator.js"></script>
 <script type="text/javascript" src="../src/py_builtin_functions.js"></script>
+<script type="text/javascript" src="../src/py_exceptions.js"></script>
+<script type="text/javascript" src="../src/py_range_slice.js"></script>
 <script type="text/javascript" src="../src/py_bytes.js"></script>
 <script type="text/javascript" src="../src/py_set.js"></script>
 <script type="text/javascript" src="../src/js_objects.js"></script>
@@ -49,13 +49,17 @@ a.sort_link{
 
 <script type="text/javascript" src="../src/py_string.js"></script>
 <script type="text/javascript" src="../src/py_int.js"></script>
+<script type="text/javascript" src="../src/py_long_int.js"></script>
 <script type="text/javascript" src="../src/py_float.js"></script>
 <script type="text/javascript" src="../src/py_complex.js"></script>
 <script type="text/javascript" src="../src/py_dict.js"></script>
 <script type="text/javascript" src="../src/py_list.js"></script>
+<script type="text/javascript" src="../src/py_generator.js"></script>
 <script type="text/javascript" src="../src/py_dom.js"></script>
 
 <script type="text/javascript" src="../src/builtin_modules.js"></script>
+<script type="text/javascript" src="../src/py_import_hooks.js"></script>
+<script type="text/javascript" src="../src/async.js"></script>
 
 </head>
 <body onLoad="brython(1)">
@@ -68,13 +72,18 @@ t0 = time.time()
 
 orders = {}
 
-def sort_by_col(evt,numeric=False):
+def sort_by_col(evt, numeric=False):
     cell = evt.target
-    th_elt = cell.parent # TH cell
+    
+    # get title cell
+    th_elt = cell.closest('TH')
+
+    # get column of title cell
     for i,th in enumerate(title.children):
         if th==th_elt:
             col_num = i
             break
+
     if col_num not in orders:
         if numeric:
             orders[col_num]='down'
@@ -101,8 +110,7 @@ def sort_by_col(evt,numeric=False):
     if ascending == 'down':
         rows.reverse()
 
-    for i in range(len(rows)):
-        t <= rows[i]
+    t <= rows
 
 lines = ['Allemagne','Berlin',357026,81.8,
 'Autriche','Vienne',83871,8.40,
@@ -150,21 +158,16 @@ title <= html.TH('Population'+link_num.clone())
 t <= title
 
 rows = []
-for i in range(len(lines)/4):
+for i in range(int(len(lines)/4)):
     row = html.TR()
-    for j in range(2):
-        row <= html.TD(lines[4*i+j])
-    for j in range(2,4):
-        row <= html.TD(lines[4*i+j],align="right")
+    row <= (html.TD(lines[4*i+j]) for j in range(2))
+    row <= (html.TD(lines[4*i+j],align="right") for j in range(2, 4))
     rows.append(row)
 
-for row in rows:
-    t <= row
+t <= rows
 
 table <= t
 doc <= table
-
-x = html.P()+html.A('r')
 
 foot = html.P()+html.I('Ecrit en '+html.A('Brython',href="http://www.brython.info"))
 

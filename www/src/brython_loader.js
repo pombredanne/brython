@@ -56,7 +56,7 @@
 
     var _files=[]
     if (_loader.debug === undefined || _loader.debug==0) {  // just load brython.js
-       _files.append("brython")
+       _files.push("brython")
     } else {
       
        //import_file(_path,0)
@@ -64,8 +64,8 @@
                 'py2js', 'py_object', 'py_type', 'py_utils',
                 'py_generator', 'py_builtin_functions',
                 'py_bytes', 'py_set', 'js_objects', 'stdlib_paths',
-                'py_import', 'py_string', 'py_int', 'py_float', 
-                'py_complex', 'py_dict', 'py_list', 'py_dom']
+                'py_import', 'py_string', 'py_int', 'py_long_int', 'py_float', 
+                'py_complex', 'py_dict', 'py_list', 'py_dom', 'async']
 
         _files.push.apply(_files, py_files)
     }

@@ -71,35 +71,31 @@ function divmod_pos(v1, v2){
         mod = LongInt('0')
     }else{
         var quotient = '', v1_init = v1
-        // mv2 maps integers i from 2 to 9 to i*v2
+        var left = v1.substr(0, v2.length)
+        if(v1<v2){left = v1.substr(0, v2.length+1)}
+        var right = v1.substr(left.length)
+        // mv2 maps integers i from 2 to 9 to i*v2, used as a cache to avoid
+        // having to compute i*v2 each time
         var mv2 = {}
         // Javascript "safe integer" with the 15 first digits in v2,
         // used in the algorithm to test candidate values
         var jsv2 = parseInt(v2.substr(0,15))
 
         // Division algorithm
-        while(comp_pos(v1,v2)>-1){
-            // At each step in the division, v1 is split into substrings
-            // "left" is the left part, with the same length as v2
-            // "rest" is the rest of v1 after "left"
-            // The algorithm finds the one-digit integer "candidate" such
-            // that 0 <= left - candidate*v2 < v2
-            // It stops when left < v2
-            var left = v1.substr(0, v2.length)
-            if(left<v2){
-                if(left.length<v2.length){
-                    if(quotient==''){quotient='0'}
-                    // v1 is lesser than v2 : division is finished
-                    break
-                }
-                else{
-                    left+=v1.charAt(v2.length)
-                }
-            }
-            var rest = v1.substr(left.length)
-            // use JS division to test an approximate result
-            jsleft = parseInt(left.substr(0,15))
+        // At each step in the division, v1 is split into substrings
+        // "left" is the left part, with the same length as v2
+        // "rest" is the rest of v1 after "left"
+        // The algorithm finds the one-digit integer "candidate" such
+        // that 0 <= left - candidate*v2 < v2
+        // It stops when right is empty
+        while(true){
+            // Uses JS division to test an approximate result
+            var jsleft = parseInt(left.substr(0,15))
             var candidate = Math.floor(jsleft/jsv2).toString()
+
+            // Check that candidate is the correct result
+            // Start by computing candidate*v2 : for this, use the table
+            // mv2, which stores the multiples of v2 already calculated
             if(mv2[candidate]===undefined){
                 mv2[candidate] = mul_pos(v2, candidate).value
             }
@@ -110,15 +106,22 @@ function divmod_pos(v1, v2){
                     mv2[candidate] = mul_pos(v2, candidate).value
                 }
             }
+
             // Add candidate to the quotient
             quotient += candidate
+
             // New value for left : left - v2*candidate
             left = sub_pos(left, mv2[candidate]).value
-            // New value for v1
-            v1 = left+rest
+
+            // Stop if all digits in v1 have been used
+            if(right.length==0){break}
+
+            // Else, add next digit to left and remove it from right
+            left += right.charAt(0)
+            right = right.substr(1)
         }
         // Modulo is A - (A//B)*B
-        mod = sub_pos(v1_init, mul_pos(quotient, v2).value)
+        mod = sub_pos(v1, mul_pos(quotient, v2).value)
     }
     return [LongInt(quotient), mod]
 }
@@ -350,6 +353,15 @@ $LongIntDict.__index__ = function(self){
     return res
 }
 
+$LongIntDict.__invert__ = function(self){
+    var bin = $LongIntDict.__index__(self)
+    var res = ''
+    for(var i=0;i<bin.length;i++){
+        res += bin.charAt(i)=='0' ? '1' : '0'
+    }
+    return LongInt(res, 2)
+}
+
 $LongIntDict.__le__ = function(self, other){
     if (typeof other == 'number') other=LongInt(_b_.str(other))
     if(self.value.length>other.value.length){return false}
@@ -507,6 +519,18 @@ $LongIntDict.__xor__ = function(self, other){
     return LongInt(res, 2)
 }
 
+$LongIntDict.to_base = function(self, base){
+    // Returns the string representation of self in specified base
+    var res='', v=self.value
+    while(v>0){
+        var dm = divmod_pos(v, base.toString())
+        res = parseInt(dm[1].value).toString(base)+res
+        v = dm[0].value
+        if(v==0){break}
+    }
+    return res
+}
+
 function digits(base){
     // Return an object where keys are all the digits valid in specified base
     // and value is "true"
@@ -528,6 +552,16 @@ function digits(base){
     return is_digits
 }
 
+var MAX_SAFE_INTEGER = Math.pow(2, 53)-1;
+var MIN_SAFE_INTEGER = -Number.MAX_SAFE_INTEGER;
+
+function isSafeInteger(n) {
+    return (typeof n === 'number' &&
+        Math.round(n) === n &&
+        Number.MIN_SAFE_INTEGER <= n &&
+        n <= Number.MAX_SAFE_INTEGER);
+}
+
 function LongInt(value, base){
     if(arguments.length>2){
         throw _b_.TypeError("LongInt takes at most 2 arguments ("+
@@ -541,7 +575,14 @@ function LongInt(value, base){
     if(base<0 || base==1 || base>36){
         throw ValueError("LongInt() base must be >= 2 and <= 36")
     }
-    if(!typeof value=='string'){
+    if(isinstance(value, float)){
+        if(value>=0){value=Math.round(value.value)}
+        else{value=Math.ceil(value.value)}
+    }
+    if(typeof value=='number'){
+        if(isSafeInteger(value)){value = value.toString()}
+        else{throw ValueError("argument of long_int is not a safe integer")}
+    }else if(typeof value!='string'){
         throw ValueError("argument of long_int must be a string, not "+
             $B.get_class(value).__name__)
     }
@@ -558,7 +599,7 @@ function LongInt(value, base){
         // Remove prefix
         if(value.length==1){
             // "+" or "-" alone are not valid arguments
-            throw ValueError('LongInt argument is not a valid number')            
+            throw ValueError('LongInt argument is not a valid number: "'+value+'"')
         }else{value=value.substr(1)}
     }
     // Ignore leading zeros
@@ -566,15 +607,17 @@ function LongInt(value, base){
     value = value.substr(start)
 
     // Check if all characters in value are valid in the base
-    var is_digits = digits(base)
+    var is_digits = digits(base), point = -1
     for(var i=0;i<value.length;i++){
-        if(!is_digits[value.charAt(i)]){
-            throw ValueError('LongInt argument is not a valid number')
+        if(value.charAt(i)=='.' && point==-1){point=i}
+        else if(!is_digits[value.charAt(i)]){
+            throw ValueError('LongInt argument is not a valid number: "'+value+'"')
         }
     }
+    if(point!=-1){value=value.substr(0,point)}
     if(base!=10){
         // Conversion to base 10
-        var coef = '1', v10 = LongInt('0'),
+        var coef = '1', v10 = LongInt(0),
             pos = value.length, digit_base10
         while(pos--){
             digit_base10 = parseInt(value.charAt(pos), base).toString()

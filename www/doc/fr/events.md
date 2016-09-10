@@ -21,7 +21,7 @@ btn.bind('click', montre)
 
 Le premier argument de `bind` est le type d'événement auquel le bouton doit 
 réagir ; le deuxième est une fonction qui prend un seul argument, une instance 
-de la classe `DOMEvent`. Par exemple :
+de la classe `DOMEvent` (définie dans le module **browser**). Par exemple :
 
 ```python
 def montre(ev):
@@ -31,7 +31,7 @@ def montre(ev):
 (rappelez-vous que pour voir les résultats de `print` il faut ouvrir la 
 console du navigateur)
 
-Les instances de `DOMEvent` possèdent un certain nombre d'attribut qui varient 
+Les instances de `DOMEvent` possèdent un certain nombre d'attributs qui varient 
 selon le type d'événement. Dans le cas d'un clic, et plus généralement des 
 événements relatifs à la souris, les attributs sont notamment :
 
@@ -59,7 +59,11 @@ méthodes suivantes :
 <code>elt.unbind(_nom\_evt[, gest_])</code>
 
 > défait l'association de la fonction _gest_ à l'événement de nom _nom\_evt_.
- Si _gest_ n'est pas fourni, défait toutes les associations de l'événement.
+> Si _gest_ n'est pas fourni, défait toutes les associations de l'événement.
+ 
+<code>elt.events(_nom\_evt_)</code>
+
+> renvoie la liste des fonctions qui gèrent l'événement de nom _nom\_evt_
 
 Objets `DOMEvent`
 -----------------
@@ -246,6 +250,13 @@ ev.stopPropagation()
 
 > L'événement ne se propage donc pas au niveau supérieur et le traitement s'arrête sans afficher "clic sur jaune"
 
+Créer et déclencher un événement
+--------------------------------
+
+`DOMEvent(`_nom\_evt_`)` 
+> Crée un événement de type _nom\_evt_ comme _keydown, mousemove_, etc.
 
 
+`element.dispatchEvent(`_event_`)`
+> Déclenche l'événement _event_ sur l'élément spécifié
 

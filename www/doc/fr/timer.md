@@ -82,9 +82,9 @@ document['ct-stop'].bind('click', stop_button)
 </table>
 </div>
 
-`set_interval(`_fonction,ms_`)`
+`set_interval(`_fonction, ms_`)`
 > lance l'exécution répétée de la *fonction* toutes les *ms* millisecondes. 
-> Renvoie un objet utilisable dans la fonction suivante
+> Renvoie un objet utilisable dans la fonction `clear_interval` décrite ci-dessous.
 
 > Elle repose sur la fonction `setInterval` de Javascript. Voir la 
 > [documentation officielle](http://www.w3.org/TR/2011/WD-html5-20110525/timers.html#dom-windowtimers-setinterval).

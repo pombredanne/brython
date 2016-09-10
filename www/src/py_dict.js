@@ -2,9 +2,9 @@
 
 eval($B.InjectBuiltins())
 
-var $ObjectDict = _b_.object.$dict
-
-var $DICT_MINSIZE = 8
+var $ObjectDict = _b_.object.$dict,
+    str_hash = _b_.str.$dict.__hash__,
+    $N = _b_.None
 
 // dictionary
 function $DictClass($keys,$values){
@@ -12,73 +12,9 @@ function $DictClass($keys,$values){
     this.__class__ = $DictDict
     $DictDict.clear(this)
 
-    var setitem=$DictDict.__setitem__    
-    for (var i = 0; i < $keys.length; ++i) {
-        setitem($keys[i], $values[i])
-    }
-}
-
-dummy = {}
-
-// can either grow or shrink depending on actual used items
-var $grow_dict = function(self) {
-    var new_size = $DICT_MINSIZE
-    var target_size = (self.$used < 50000? 2 : 4) * self.$used
-    while (new_size < target_size) {
-        new_size <<= 1
-    }
-    var new_data = Array($DICT_MINSIZE)
-    try {
-        var ig = new $item_generator(self)
-        while(1) {
-            var itm = ig.next()
-            var bucket = $find_empty(itm[0], new_size, new_data)
-            new_data[bucket] = itm
-        }
-    } catch (err) {
-        if (err.__name__ !== "StopIteration") { throw err } else { $B.$pop_exc() }
-    }
-    self.$data = new_data
-    self.$fill = self.$used
-    self.$size = new_size
-}
-
-var $lookup_key = function(self, key) {
-    eq = _b_.getattr(key, "__eq__")
-    size = self.$size
-    data = self.$data
-    bucket = Math.abs(_b_.hash(key) % size)
-    val = data[bucket]
-    while (val !== undefined) {
-        if (val === dummy) {
-            bucket = $next_probe(bucket, size)
-        } else {
-            k_val = val[0]  // [key, value]
-            if (eq(k_val)) {
-                return bucket
-            } else {
-                bucket = $next_probe(bucket, size)
-            }
-        }
-        val = data[bucket]
-    }
-    self.$empty_bucket = bucket
-
-    return undefined
-}
-
-var $find_empty = function(key, size, data) {
-    bucket = Math.abs(hash(key) % size)
-    val = data[bucket]
-    while (val !== undefined) {
-        bucket = $next_probe(bucket, size)
-        val = data[bucket]
-    }
-    return bucket
-}
-
-var $next_probe = function(i, size) {
-    return ((i * 5) + 1) % size
+    var setitem=$DictDict.__setitem__
+    var i=$keys.length
+    while(i--) setitem($keys[i], $values[i])
 }
 
 var $DictDict = {__class__:$B.$type,
@@ -104,27 +40,30 @@ $value_iterator.prototype.length = function() { return this.iter.length }
 $value_iterator.prototype.next = function() { return this.iter.next()[1] }
 
 var $item_generator = function(d) {
+    
     this.i = 0
-    this.data = d.$data
-    this.size = d.$size
-    this.used = d.$used
-    this.length=0
 
-    this.items=[]
+    if(d.$jsobj){
+        this.items = []
+        for(var attr in d.$jsobj){
+            if(attr.charAt(0)!='$'){this.items.push([attr,d.$jsobj[attr]])}
+        }
+        this.length=this.items.length;
+        return
+    }
+    
+    var items=[]
+    var pos=0
     for (var k in d.$numeric_dict) {
-        this.items.push([parseFloat(k), d.$numeric_dict[k]])
+        items[pos++]=[parseFloat(k), d.$numeric_dict[k]]
     }
 
-    for (var k in d.$string_dict) {
-        this.items.push([k, d.$string_dict[k]])
-    }
+    for (var k in d.$string_dict) {items[pos++]=[k, d.$string_dict[k]]}
 
-    for (var i=0; i < this.data.length; i++) {
-        var _v=this.data[i]
-        if (_v === undefined || _v === dummy) continue
-        this.items.push(_v)
-    }
-    this.length=this.items.length
+    for (var k in d.$object_dict) {items[pos++] = d.$object_dict[k]}
+
+    this.items=items
+    this.length=items.length
 }
 
 $item_generator.prototype.next = function() {
@@ -146,15 +85,10 @@ $item_iterator.prototype.length = function() {return this.iter.items.length }
 $item_iterator.prototype.next = function() { return _b_.tuple(this.iter.next()) }
 
 var $copy_dict = function(left, right) {
-    var gen = new $item_generator(right)
-    try {
-        while(1) {
-            var item = gen.next()
-            $DictDict.__setitem__(left, item[0], item[1])
-        }
-    } catch (err) {
-        if (err.__name__ !== "StopIteration") { throw err } else { $B.$pop_exc() }
-    }
+    var _l=new $item_generator(right).as_list()
+    var si=$DictDict.__setitem__
+    var i=_l.length
+    while(i--) si(left, _l[i][0], _l[i][1])
 }
 
 $iterator_wrapper = function(items,klass){
@@ -163,108 +97,136 @@ $iterator_wrapper = function(items,klass){
         __iter__:function(){items.iter.i=0; return res},
         __len__:function(){return items.length()},
         __next__:function(){
-            //if (items.length() !== items.iter.used) {
-            //    throw _b_.RuntimeError("dictionary changed size during iteration")
-            //}
             return items.next()
-            //return items[counter++]
         },
-        //__repr__:function(){return "<"+klass.__name__+" object>"},
-        //counter:0
+        __repr__:function(){return klass.__name__+'('+ new $item_generator(items).as_list().join(',') + ')'},
     }
     res.__str__ = res.toString = res.__repr__
     return res
 }
 
-
-var $dict_keysDict = $B.$iterator_class('dict_keys')
-
-$DictDict.keys = function(self){
-    if (arguments.length > 1) {
-       var _len=arguments.length - 1
-       var _msg="keys() takes no arguments ("+_len+" given)"
-       throw _b_.TypeError(_msg)
-    }
-    return $iterator_wrapper(new $key_iterator(self),$dict_keysDict)
+$DictDict.__bool__ = function (self) {
+    var $=$B.args('__bool__',1,{self:null},['self'],arguments,{},null,null)
+    return $DictDict.__len__(self) > 0
 }
 
-var $dict_valuesDict = $B.$iterator_class('dict_values')
+$DictDict.__contains__ = function(){
 
-$DictDict.values = function(self){
-    if (arguments.length > 1) {
-       var _len=arguments.length - 1
-       var _msg="values() takes no arguments ("+_len+" given)"
-       throw _b_.TypeError(_msg)
-    }
-    return $iterator_wrapper(new $value_iterator(self), $dict_valuesDict)
-}
+    var $ = $B.args('__contains__', 2, {self:null, item:null},
+        ['self', 'item'], arguments, {}, null, null),
+        self=$.self, item=$.item
 
-$DictDict.__bool__ = function (self) {return $DictDict.__len__(self) > 0}
-
-$DictDict.__contains__ = function(self,item){
     if(self.$jsobj) return self.$jsobj[item]!==undefined
+
     switch(typeof item) {
       case 'string':
         return self.$string_dict[item] !==undefined
       case 'number':
         return self.$numeric_dict[item] !==undefined
     }
-    return $lookup_key(self, item) !== undefined
+
+    var _key=hash(item)
+    if (self.$str_hash[_key]!==undefined &&
+        _b_.getattr(item,'__eq__')(self.$str_hash[_key])){return true}
+    if (self.$numeric_dict[_key]!==undefined &&
+        _b_.getattr(item,'__eq__')(_key)){return true}
+    if (self.$object_dict[_key] !== undefined) {
+        // If the key is an object, its hash must be in the dict keys but the
+        // key itself must compare equal to the key associated with the hash
+        // For instance :
+        //
+        //     class X:
+        //         def __hash__(self): return hash('u')
+        //     
+        //     a = {'u': 'a', X(): 'b'}
+        //     assert set(a.values())=={'a', 'b'}
+        //     assert not X() in a
+            
+       var _eq = getattr(item, '__eq__')
+       if(_eq(self.$object_dict[_key][0])){return true}
+    }
+    return false
 }
 
-$DictDict.__delitem__ = function(self,arg){
+$DictDict.__delitem__ = function(){
+
+    var $ = $B.args('__eq__', 2, {self:null, arg:null},
+        ['self', 'arg'], arguments, {}, null, null),
+        self=$.self, arg=$.arg
+
+    if(self.$jsobj){
+        if(self.$jsobj[arg]===undefined){throw KeyError(arg)}
+        delete self.$jsobj[arg]
+        return $N
+    }
     switch(typeof arg) {
       case 'string':
         if (self.$string_dict[arg] === undefined) throw KeyError(_b_.str(arg))
         delete self.$string_dict[arg]
-        if (self.$jsobj) delete self.$jsobj[arg]
-        return
+        delete self.$str_hash[str_hash(arg)]
+        return $N
       case 'number':
         if (self.$numeric_dict[arg] === undefined) throw KeyError(_b_.str(arg))
         delete self.$numeric_dict[arg]
-        if (self.$jsobj) delete self.$jsobj[arg]
-        return
+        return $N
     }
     // go with defaults
 
-    var bucket = $lookup_key(self, arg)
-    if (bucket === undefined) throw KeyError(_b_.str(arg))
-    self.$data[bucket] = dummy
-    --self.$used
+    var _key=hash(arg)
+    
+    if (self.$object_dict[_key] !== undefined) {
+        delete self.$object_dict[_key]
+    }
 
     if(self.$jsobj) delete self.$jsobj[arg]
+    return $N
 }
 
-$DictDict.__eq__ = function(self,other){
-    if(other===undefined){ // compare self to class "dict"
-        return self===dict
-    }
+$DictDict.__eq__ = function(){
+    var $ = $B.args('__eq__', 2, {self:null, other:null},
+        ['self', 'other'], arguments, {}, null, null),
+        self=$.self, other=$.other
+
     if(!isinstance(other,dict)) return false
+    
+    if ($DictDict.__len__(self) != $DictDict.__len__(other)){return false}
 
-    if ($DictDict.__len__(self) != $DictDict.__len__(other)) return false
-
-    var gen = new $item_generator(self)
-    var keys1=[]
-    try {
-        while(1) keys1.push(gen.next()[0])
-    } catch (err) {
-
+    if((self.$numeric_dict.length!=other.$numeric_dict.length) ||
+        (self.$string_dict.length!=other.$string_dict.length) ||
+        (self.$object_dict.length!=other.$object_dict.length)){
+            return false
     }
-
-    for (var i=0; i < keys1.length; i++) {
-        var key=keys1[i]
-        if (!$DictDict.__contains__(other, key)) return false
-        var v1=$DictDict.__getitem__(self, key)
-        var v2=$DictDict.__getitem__(other, key)
-        if (!getattr(v1, '__eq__')(v2)) return false
+    for(var k in self.$numeric_dict){
+        if(!_b_.getattr(other.$numeric_dict[k],'__eq__')(self.$numeric_dict[k])){
+            return false
+        }
     }
-
+    for(var k in self.$string_dict){
+        if(!_b_.getattr(other.$string_dict[k],'__eq__')(self.$string_dict[k])){
+            return false
+        }
+    }
+    for(var k in self.$object_dict){
+        if(!_b_.getattr(other.$object_dict[k][1],'__eq__')(self.$object_dict[k][1])){
+            return false
+        }
+    }
+    
     return true
+
 }
 
-$DictDict.__getitem__ = function(self,arg){
-    if(self.$jsobj && self.$jsobj[arg] !== undefined) return self.$jsobj[arg]
+$DictDict.__getitem__ = function(){
+    var $ = $B.args('__getitem__', 2, {self:null, arg:null},
+        ['self', 'arg'], arguments, {}, null, null),
+        self=$.self, arg=$.arg
 
+    if(self.$jsobj){
+        if(self.$jsobj[arg]===undefined){return None}
+        return self.$jsobj[arg]
+    }
+    
+    
     switch(typeof arg) {
       case 'string':
         if (self.$string_dict[arg] !== undefined) return self.$string_dict[arg]
@@ -272,70 +234,87 @@ $DictDict.__getitem__ = function(self,arg){
       case 'number':
         if (self.$numeric_dict[arg] !== undefined) return self.$numeric_dict[arg]
     }
+
     // since the key is more complex use 'default' method of getting item
 
-    var bucket = $lookup_key(self, arg)
-    if (bucket !== undefined) return self.$data[bucket][1]
+    var _key = _b_.hash(arg),
+        _eq = _b_.getattr(arg, '__eq__')
 
-    if(hasattr(self, '__missing__')) return getattr(self, '__missing__')(arg)
+    var sk = self.$str_hash[_key]
+    if (sk!==undefined && _eq(sk)){
+        return self.$string_dict[sk]
+    }
+    if (self.$numeric_dict[_key]!==undefined && _eq(_key)){
+         return self.$numeric_dict[_key]
+    }
 
+    var obj_ref = self.$object_dict[_key]
+    if(obj_ref!==undefined){
+        // An object with the same hash is already stored
+        // Lookup should fail if equality raises an exception
+        _eq(self.$object_dict[_key][0])
+        return self.$object_dict[_key][1]
+    }
+    if(self.__class__!==$DictDict){
+        try{
+            var missing_method = getattr(self.__class__.$factory, '__missing__')
+            return missing_method(self, arg)
+        }catch(err){}
+    }
     throw KeyError(_b_.str(arg))
 }
 
-$DictDict.__hash__ = function(self) {
-    if (self === undefined) {
-       return $DictDict.__hashvalue__ || $B.$py_next_hash--  // for hash of dict type (not instance of dict)
-    }
-    throw _b_.TypeError("unhashable type: 'dict'");
-}
+$DictDict.__hash__ = None
 
 $DictDict.__init__ = function(self){
-    var args = []
-    for(var i=1;i<arguments.length;i++){args.push(arguments[i])}
+    var args = [], pos=0
+    for(var i=1;i<arguments.length;i++){args[pos++]=arguments[i]}
     $DictDict.clear(self)
+
     switch(args.length) {
       case 0:
         return
       case 1:
         var obj = args[0]
         if(Array.isArray(obj)){
-            var src = args[0]
-            var i = src.length
-            while(i--){$DictDict.__setitem__(self, src[i][0], src[i][1])}
-            return
+            var i = obj.length
+            var si = $DictDict.__setitem__
+            while(i-->0) si(self, obj[i-1][0], obj[i-1][1])
+            return $N
         }else if(isinstance(obj,dict)){
             $copy_dict(self, obj)
-            return
+            return $N
         }
 
         if(obj.__class__===$B.JSObject.$dict){
             // convert a JSObject into a Python dictionary
-            for(var attr in obj.js){
-                $DictDict.__setitem__(self,attr,obj.js[attr])
-            }
+            var si = $DictDict.__setitem__
+            for(var attr in obj.js) si(self,attr,obj.js[attr])
+
             // Attribute $jsobj is used to update the original JS object
             // when the dictionary is modified
             self.$jsobj = obj.js
-            return
+            return $N
         }
     } //switch
 
-    var $ns=$B.$MakeArgs('dict',args,[],[],'args','kw')
+    var $ns=$B.args('dict',0,{},[],args,{},'args','kw')
     var args = $ns['args']
     var kw = $ns['kw']
     
     if (args.length>0) {
         if(isinstance(args[0],dict)){
             $B.$copy_dict(self, args[0])
-            return
+            return $N
         }
 
         // format dict([(k1,v1),(k2,v2)...])
         
         if(Array.isArray(args[0])){
             var src = args[0]
-            var i = src.length
-            while(i--){$DictDict.__setitem__(self, src[i][0], src[i][1])}
+            var i = src.length -1
+            var si=$DictDict.__setitem__
+            while(i-->0) si(self, src[i-1][0], src[i-1][1])
         }else{
             var iterable = iter(args[0])
             while(1){
@@ -345,13 +324,14 @@ $DictDict.__init__ = function(self){
                    var value = getattr(elt,'__getitem__')(1)
                    $DictDict.__setitem__(self, key, value)
                 }catch(err){
-                   if(err.__name__==='StopIteration'){$B.$pop_exc();break}
+                   if(err.__name__==='StopIteration'){break}
                    throw err
                 }
             }
         }
     }//if
     if($DictDict.__len__(kw) > 0) $copy_dict(self, kw)
+    return $N
 }
 
 var $dict_iterator = $B.$iterator_class('dict iterator')
@@ -360,12 +340,18 @@ $DictDict.__iter__ = function(self) {
 }
 
 $DictDict.__len__ = function(self) {
-   var _num_len=0, _str_len=0
+    var _count=0
+    
+    if(self.$jsobj){
+        for(var attr in self.$jsobj){if(attr.charAt(0)!='$'){_count++}}
+        return _count
+    }
 
-   for (var k in self.$numeric_dict) _num_len++
-   for (var k in self.$string_dict) _str_len++
+    for (var k in self.$numeric_dict) _count++
+    for (var k in self.$string_dict) _count++
+    for (var k in self.$object_dict) _count+= self.$object_dict[k].length
  
-   return self.$used + _num_len + _str_len
+    return _count
 }
 
 $DictDict.__mro__ = [$DictDict,$ObjectDict]
@@ -374,62 +360,83 @@ $DictDict.__ne__ = function(self,other){return !$DictDict.__eq__(self,other)}
 
 $DictDict.__next__ = function(self){
     if(self.$iter==null){
-        self.$iter = new $item_generator(self) //.$data)
+        self.$iter = new $item_generator(self)
     }
     try {
         return self.$iter.next()
     } catch (err) {
-        if (err.__name__ !== "StopIteration") { throw err } else { $B.$pop_exc() }
+        if (err.__name__ !== "StopIteration") { throw err }
     }
 }
 
 $DictDict.__repr__ = function(self){
     if(self===undefined) return "<class 'dict'>"
+    if(self.$jsobj){ // wrapper around Javascript object
+        var res = []
+        for(var attr in self.$jsobj){
+            if(attr.charAt(0)=='$' || attr=='__class__'){continue}
+            else{
+                try{
+                    res.push("'"+attr+"': "+_b_.repr(self.$jsobj[attr]))
+                }catch(err){
+                    // FIX ME
+                }
+            }
+        }
+        return '{'+res.join(', ')+'}'
+    }
     var _objs=[self]  // used to elimate recursion
-    var res=[]
+    var res=[], pos=0
     var items = new $item_generator(self).as_list()
     for (var i=0; i < items.length; i++) {
         var itm = items[i]
-        if (_objs.indexOf(itm[1]) > -1 && _b_.isinstance(itm[1], [_b_.dict,_b_.list,_b_.set, _b_.tuple])) {
-           var value='?'+_b_.type(itm[1])
-           if(isinstance(itm[1], dict)) value='{...}'
-           res.push(repr(itm[0])+': '+ value)
-        } else {
-           if (_objs.indexOf(itm[1]) == -1) _objs.push(itm[1])
-           res.push(repr(itm[0])+': '+repr(itm[1]))
-        }
+        if(itm[1]===self){res[pos++]=repr(itm[0])+': {...}'}
+        else{res[pos++]=repr(itm[0])+': '+repr(itm[1])}
     }
     return '{'+ res.join(', ') +'}'
 }
 
 $DictDict.__setitem__ = function(self,key,value){
+
+    var $ = $B.args('__setitem__', 3, {self:null, key:null, value:null},
+        ['self', 'key', 'value'], arguments, {}, null, null),
+        self=$.self, key=$.key, value=$.value
+
+    if(self.$jsobj){self.$jsobj[key]=value;return}
+
     switch(typeof key) {
       case 'string':
         self.$string_dict[key]=value
-        if(self.$jsobj) self.$jsobj[key]=value
-        return
+        self.$str_hash[str_hash(key)]=key
+        return $N
       case 'number':
         self.$numeric_dict[key]=value
-        if(self.$jsobj) self.$jsobj[key]=value
-        return
+        return $N
     }
-
+    
     // if we got here the key is more complex, use default method
 
-    // if adding new item would invoke a grow...
-    if (self.$fill + 1 > self.$size * 3 / 4) {
-        $grow_dict(self)
+    var _key=hash(key)
+    var _eq=getattr(key, '__eq__')
+    
+    if(self.$numeric_dict[_key]!==undefined && _eq(_key)){
+        self.$numeric_dict[_key] = value
+        return $N
+    }
+    var sk = self.$str_hash[_key]
+    if(sk!==undefined && _eq(sk)){
+        self.$string_dict[sk] = value
+        return $N
     }
 
-    var bucket = $lookup_key(self, key)
-    if (bucket === undefined) {
-        bucket = self.$empty_bucket
-        ++self.$fill
-        ++self.$used
+    var obj_ref = self.$object_dict[_key]
+    if(obj_ref!==undefined){
+        // An object with the same hash is already stored
+        // Lookup should fail if equality raises an exception
+        _eq(self.$object_dict[_key][0])
     }
-    self.$data[bucket] = [key, value]
-
-    if(self.$jsobj) self.$jsobj[key]=value
+    self.$object_dict[_key] = [key, value]
+    return $N
 }
 
 $DictDict.__str__ = $DictDict.__repr__
@@ -437,39 +444,61 @@ $DictDict.__str__ = $DictDict.__repr__
 // add "reflected" methods
 $B.make_rmethods($DictDict)
 
-$DictDict.clear = function(self){
+$DictDict.clear = function(){
     // Remove all items from the dictionary.
-    self.$data = Array($DICT_MINSIZE)
-    self.$size = $DICT_MINSIZE
-    self.$fill = 0
-    self.$used = 0
+    var $ = $B.args('clear',1,{self:null},['self'],arguments,{},null,null),
+        self = $.self
 
     self.$numeric_dict={}
     self.$string_dict={}
+    self.$str_hash={}
+    self.$object_dict={}
 
     if(self.$jsobj) self.$jsobj={}
+    return $N
 }
 
 $DictDict.copy = function(self){
     // Return a shallow copy of the dictionary
-    var res = _b_.dict()
+    var $ = $B.args('copy',1,{self:null},['self'],arguments,{},null,null),
+        self = $.self,
+        res = _b_.dict()
     $copy_dict(res, self)
     return res
 }
 
-$DictDict.get = function(self, key, _default){
-    if (_default === undefined) _default=None
-    switch(typeof key) {
-      case 'string':
-        return self.$string_dict[key] || _default
-      case 'number':
-        return self.$numeric_dict[key] || _default
-    }
+$DictDict.fromkeys = function(){
 
-    var bucket = $lookup_key(self, key)
-    if(bucket !== undefined) return self.$data[bucket][1]
-    if(_default!==undefined) return _default
-    return None
+    var $ = $B.args('fromkeys', 3, {cls:null, keys:null, value:null},
+        ['cls', 'keys', 'value'], arguments, {value:_b_.None}, null, null),
+        keys=$.keys, value=$.value
+
+    // class method
+    var res = $.cls() //dict()
+    var keys_iter = _b_.iter(keys)
+    while(1){
+        try{
+            var key = _b_.next(keys_iter)
+            $DictDict.__setitem__(res,key,value)
+        }catch(err){
+            if($B.is_exc(err,[_b_.StopIteration])){
+                return res
+            }
+            throw err
+        }
+    }
+}
+$DictDict.fromkeys.$type = 'classmethod'
+
+$DictDict.get = function(){
+    var $ = $B.args('get', 3, {self:null, key:null, _default:null},
+        ['self', 'key', '_default'], arguments, {_default:$N}, null, null)
+    
+    try{return $DictDict.__getitem__($.self, $.key)}
+    catch(err){
+        if(_b_.isinstance(err, _b_.KeyError)){return $._default}
+        else{throw err}
+    }
 }
 
 var $dict_itemsDict = $B.$iterator_class('dict_items')
@@ -483,32 +512,28 @@ $DictDict.items = function(self){
     return $iterator_wrapper(new $item_iterator(self), $dict_itemsDict)
 }
 
-$DictDict.fromkeys = function(keys,value){
-    // class method
-    if(value===undefined) value=None
-    var res = dict()
-    var keys_iter = _b_.iter(keys)
-    while(1){
-        try{
-            var key = _b_.next(keys_iter)
-            $DictDict.__setitem__(res,key,value)
-        }catch(err){
-            if($B.is_exc(err,[_b_.StopIteration])){
-                $B.$pop_exc()
-                return res
-            }
-            throw err
-        }
+var $dict_keysDict = $B.$iterator_class('dict_keys')
+
+$DictDict.keys = function(self){
+    if (arguments.length > 1) {
+       var _len=arguments.length - 1
+       var _msg="keys() takes no arguments ("+_len+" given)"
+       throw _b_.TypeError(_msg)
     }
+    return $iterator_wrapper(new $key_iterator(self),$dict_keysDict)
 }
 
-$DictDict.pop = function(self,key,_default){
+$DictDict.pop = function(){
+
+    var $ = $B.args('pop', 3, {self:null, key: null, _default:null},
+        ['self', 'key', '_default'], arguments, {_default:$N}, null, null),
+        self=$.self, key=$.key, _default=$._default
+
     try{
         var res = $DictDict.__getitem__(self,key)
         $DictDict.__delitem__(self,key)
         return res
     }catch(err){
-        $B.$pop_exc()
         if(err.__name__==='KeyError'){
             if(_default!==undefined) return _default
             throw err
@@ -524,13 +549,17 @@ $DictDict.popitem = function(self){
         return _b_.tuple(itm)
     }catch(err) {
         if (err.__name__ == "StopIteration") {
-            $B.$pop_exc()
             throw KeyError("'popitem(): dictionary is empty'")
         }
     }
 }
 
-$DictDict.setdefault = function(self,key,_default){
+$DictDict.setdefault = function(){
+
+    var $ = $B.args('setdefault', 3, {self:null, key: null, _default:null},
+        ['self', 'key', '_default'], arguments, {}, null, null),
+        self=$.self, key=$.key, _default=$._default
+
     try{return $DictDict.__getitem__(self,key)}
     catch(err){
         if(_default===undefined) _default=None
@@ -540,46 +569,98 @@ $DictDict.setdefault = function(self,key,_default){
 }
 
 $DictDict.update = function(self){
-    var params = []
-    for(var i=1;i<arguments.length;i++){params.push(arguments[i])}
-    var $ns=$B.$MakeArgs('$DictDict.update',params,[],[],'args','kw')
-    var args = $ns['args']
+
+    var $ = $B.args('update',1,{'self':null},['self'],arguments,{},'args','kw'),
+        self=$.self, args=$.args, kw=$.kw
+
     if(args.length>0) {
       var o=args[0]
       if (isinstance(o,dict)){
          $copy_dict(self, o)
       } else if (hasattr(o, '__getitem__') && hasattr(o, 'keys')) {
          var _keys=_b_.list(getattr(o, 'keys')())
-         for (var i=0; i < _keys.length; i++) {
-             var _value = getattr(o, '__getitem__')(_keys[i]) 
-             $DictDict.__setitem__(self, _keys[i], _value)
+         var si=$DictDict.__setitem__
+         var i=_keys.length
+         while(i--) {
+             //for (var i=0; i < _keys.length; i++) {
+             var _value = getattr(o, '__getitem__')(_keys[i])
+             si(self, _keys[i], _value)
          }
       }
     }
-    var kw = $ns['kw']
     $copy_dict(self, kw)
+    return $N
 }
 
-function dict(_args,second){
-    var res = {__class__:$DictDict}
+var $dict_valuesDict = $B.$iterator_class('dict_values')
 
-    if(second===undefined && Array.isArray(_args)){
-        // Form "dict([[key1, value1], [key2,value2], ...])"
-        $DictDict.clear(res)
-        var i = _args.length
-        while(i--){
-            var key = _args[i][0]
-            if(typeof key=='string'){res.$string_dict[key] = _args[i][1]}
-            else if(typeof key=='number'){res.$numeric_dict[key] = _args[i][1]}
-            else{$DictDict.__setitem__(res, key, _args[i][1])}
+$DictDict.values = function(self){
+    if (arguments.length > 1) {
+       var _len=arguments.length - 1
+       var _msg="values() takes no arguments ("+_len+" given)"
+       throw _b_.TypeError(_msg)
+    }
+    return $iterator_wrapper(new $value_iterator(self), $dict_valuesDict)
+}
+
+function dict(args, second){
+
+    var res = {__class__:$DictDict,
+        $numeric_dict : {},
+        $object_dict : {},
+        $string_dict : {},
+        $str_hash: {},
+        length: 0
+    }
+    
+    if(args===undefined){return res}
+        
+    if(second===undefined){
+        if(Array.isArray(args)){
+            // Form "dict([[key1, value1], [key2,value2], ...])"
+            var i = -1, stop = args.length-1
+            var si = $DictDict.__setitem__
+            while(i++<stop){
+                var item=args[i]
+                switch(typeof item[0]) {
+                  case 'string':
+                    res.$string_dict[item[0]]=item[1]
+                    res.$str_hash[str_hash(item[0])]=item[0]
+                    break;
+                  case 'number':
+                    res.$numeric_dict[item[0]]=item[1]
+                    break
+                  default:
+                    si(res, item[0], item[1])
+                    break
+                }
+            }
+            return res
+        }else if(args.$nat=='kw'){
+            // Form dict(k1=v1, k2=v2...)
+            var kw = args['kw']
+            for(var attr in kw){
+                switch(typeof attr) {
+                  case 'string':
+                    res.$string_dict[attr]=kw[attr]
+                    res.$str_hash[str_hash(attr)]=attr
+                    break;
+                  case 'number':
+                    res.$numeric_dict[attr]=kw[attr]
+                    break
+                  default:
+                    si(res, attr, kw[attr])
+                    break
+                }
+            }
+            return res
         }
-        return res
     }
 
     // apply __init__ with arguments of dict()
-    var args = [res]
-    for(var i=0, _len_i = arguments.length; i < _len_i;i++){args.push(arguments[i])}
-    $DictDict.__init__.apply(null,args)
+    var _args = [res], pos=1
+    for(var i=0, _len_i = arguments.length; i < _len_i;i++){_args[pos++]=arguments[i]}
+    $DictDict.__init__.apply(null,_args)
     return res
 }
 
@@ -601,72 +682,33 @@ $B.$dict_items = function(d) { return new $item_generator(d).as_list() }
 $B.$copy_dict = $copy_dict  // copy from right to left
 $B.$dict_get_copy = $DictDict.copy  // return a shallow copy
 
-// Class used for attribute __dict__ of objects
 
-$ObjDictDict = {__class__:$B.$type,__name__:'obj_dict'}
-$ObjDictDict.__mro__ = [$ObjDictDict, $DictDict, $ObjectDict]
+// Class for attribute __dict__ of classes
+var mappingproxyDict = {
+    __class__ : $B.$type,
+    __name__ : "mappingproxy"
+}
+mappingproxyDict.__mro__ = [mappingproxyDict, _b_.object.$dict]
 
-$ObjDictDict.__delitem__ = function(self, key){
-    $DictDict.__delitem__(self, key)
-    delete self.$obj[key]
+mappingproxyDict.__setitem__ = function(){
+    throw _b_.TypeError("'mappingproxy' object does not support item assignment")
 }
 
-$ObjDictDict.__setitem__ = function(self, key, value){
-    $DictDict.__setitem__(self, key, value)
-    self.$obj[key] = value
-}
 
-$ObjDictDict.clear = function(self){
-    $DictDict.clear(self)
-    for(var key in self.$obj){delete self.$obj[key]}
-}
-
-$ObjDictDict.pop = function(self, key, _default){
-    $DictDict.pop(self, key, _default)
-    delete self.$obj[key]
-    return key
-}
-
-$ObjDictDict.popitem = function(self){
-    var res = $DictDict.popitem(self) // tuple
-    var key = res[0]
-    delete self.$obj[key]
+function mappingproxy(obj){
+    var res = obj_dict(obj)
+    res.__class__ = mappingproxyDict
     return res
 }
+mappingproxy.__class__ = $B.$factory
+mappingproxy.$dict = mappingproxyDict
+mappingproxyDict.$factory = mappingproxy
+$B.mappingproxy = mappingproxy
 
-$ObjDictDict.update = function(self){
-    $DictDict.update.apply(null, arguments)
-    // Update attributes of underlying object by iterating on self.items()
-    var it = $DictDict.items(self)
-    while(true){
-        try{
-            var item = next(it)
-            self.$obj[item[0]] = item[1]
-        }catch(err){
-            if($B.is_exc(err,[_b_.StopIteration])){
-                $B.$pop_exc();return
-            }
-            throw err
-        }
-    }
-}
-
-function obj_dict(obj){
-    // Function called to get attribute "__dict__" of an object
-    if(obj.__class__===$B.$factory){return obj.$dict.__dict__}
-    var res = {__class__:$ObjDictDict,$obj:obj}
-    $DictDict.clear(res)
-    for(var attr in obj){
-        if(attr.charAt(0)!='$'){
-           $DictDict.__setitem__(res, attr, obj[attr])
-        }
-    }
+$B.obj_dict = function(obj){
+    var res = dict()
+    res.$jsobj = obj
     return res
 }
-obj_dict.$dict = $ObjDictDict
-obj_dict.__class__ = $B.$factory
-$ObjDictDict.$factory = obj_dict
-
-$B.obj_dict = obj_dict
 
 })(__BRYTHON__)

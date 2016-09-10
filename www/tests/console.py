@@ -63,7 +63,7 @@ def license():
 license.__repr__ = lambda:_license
 
 def write(data):
-    doc['code'].value += data
+    doc['code'].value += str(data)
 
 
 sys.stdout.write = sys.stderr.write = write
@@ -74,7 +74,8 @@ _status = "main"  # or "block" if typing inside a block
 # execution namespace
 editor_ns = {'credits':credits,
     'copyright':copyright,
-    'license':license}  
+    'license':license,
+    '__name__':'__main__'}  
 
 def cursorToEnd(*args):
     pos = len(doc['code'].value)
@@ -110,12 +111,12 @@ def myKeyPress(event):
             return
         doc['code'].value += '\n'
         history.append(currentLine)
-        current += 1
+        current = len(history)
         if _status == "main" or _status == "3string":
             try:
                 _ = editor_ns['_'] = eval(currentLine, editor_ns)
                 if _ is not None:
-                    print(repr(_))
+                    write(repr(_)+'\n')
                 doc['code'].value += '>>> '
                 _status = "main"
             except IndentationError:
@@ -133,6 +134,9 @@ def myKeyPress(event):
                         traceback.print_exc()
                     doc['code'].value += '>>> '
                     _status = "main"
+                elif str(msg) == 'decorator expects function':
+                    doc['code'].value += '... '
+                    _status = "block"
                 else:
                     traceback.print_exc()
                     doc['code'].value += '>>> '

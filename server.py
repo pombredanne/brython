@@ -10,15 +10,36 @@ served from subdirectory cgi-bin
 import os
 import sys
 from webbrowser import open_new_tab
+import argparse
 
-# generate static doc pages if not already present
-if not os.path.exists(os.path.join(os.getcwd(),'www','static_doc')):
-    save_dir = os.getcwd()
-    os.chdir(os.path.join(os.getcwd(),'scripts'))
-    make_doc = open('make_doc.py', "rb").read()
-    make_doc = make_doc.decode("utf-8")
-    exec(make_doc)
-    os.chdir(save_dir)
+# port to be used when the server runs locally
+parser = argparse.ArgumentParser()
+parser.add_argument('--port', help="The port to be used by the local server")
+
+# generate docs?
+# when testing new code on your repo it is not necessary to generate docs all
+# the time so this option allows you to avoid this process
+parser.add_argument(
+    '--no-docs', 
+    help="Do not generate static docs.", 
+    action="store_true")
+
+args = parser.parse_args()
+
+if args.port:
+    port = int(args.port)
+else:
+    port = 8000
+
+if not args.no_docs:
+    # generate static doc pages if not already present
+    if not os.path.exists(os.path.join(os.getcwd(),'www','static_doc')):
+        save_dir = os.getcwd()
+        os.chdir(os.path.join(os.getcwd(),'scripts'))
+        make_doc = open('make_doc.py', "rb").read()
+        make_doc = make_doc.decode("utf-8")
+        exec(make_doc)
+        os.chdir(save_dir)
 
 os.chdir(os.path.join(os.getcwd(), 'www'))
 
@@ -40,10 +61,11 @@ class RequestHandler(CGIHTTPRequestHandler):
             return os.path.join(cgi_dir,*elts[2:])
         return CGIHTTPRequestHandler.translate_path(self, path)
 
-server_address, handler = ('', 8000), RequestHandler
+server_address, handler = ('', port), RequestHandler
 httpd = server.HTTPServer(server_address, handler)
 print(__doc__)
 print(("Server running on port http://localhost:{}.".format(server_address[1])))
 print("Press CTRL+C to Quit.")
 open_new_tab("http://localhost:{}/".format(server_address[1]))
 httpd.serve_forever()
+

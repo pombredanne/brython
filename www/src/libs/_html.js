@@ -11,7 +11,8 @@ function makeTagDict(tagName){
         }
 
     dict.__init__ = function(){
-        var $ns=$B.$MakeArgs('pow',arguments,['self'],[],'args','kw')
+        var $ns=$B.args('__init__',1,{self:null},['self'],
+            arguments,{},'args','kw')
         var self = $ns['self']
         var args = $ns['args']
         if(args.length==1){
@@ -37,11 +38,11 @@ function makeTagDict(tagName){
             if(arg.toLowerCase().substr(0,2)==="on"){ 
                 // Event binding passed as argument "onclick", "onfocus"...
                 // Better use method bind of DOMNode objects
-                var js = '$B.DOMNode.bind(self,"'
-                js += arg.toLowerCase().substr(2)
-                eval(js+'",function(){'+value+'})')
+                var js = '$B.DOMNodeDict.bind(self,"'
+                js += arg.toLowerCase().substr(2)+'",function(){eval("'+value+'")})'
+                eval(js)
             }else if(arg.toLowerCase()=="style"){
-                $B.DOMNode.set_style(self,value)
+                $B.DOMNodeDict.set_style(self,value)
             } else {
                 if(value!==false){
                     // option.selected=false sets it to true :-)
@@ -56,12 +57,12 @@ function makeTagDict(tagName){
         }
     }
 
-    dict.__mro__ = [dict,$B.DOMNode,$B.builtins.object.$dict]
+    dict.__mro__ = [dict,$B.DOMNodeDict,$B.builtins.object.$dict]
 
     dict.__new__ = function(cls){
         // __new__ must be defined explicitely : it returns an instance of
         // DOMNode for the specified tagName
-        var res = $B.$DOMNode(document.createElement(tagName))
+        var res = $B.DOMNode(document.createElement(tagName))
         res.__class__ = cls.$dict
         return res
     }
@@ -75,7 +76,7 @@ function makeTagDict(tagName){
 
 function makeFactory(tagName){
     var factory = function(){
-        var res = $B.$DOMNode(document.createElement(tagName))
+        var res = $B.DOMNode(document.createElement(tagName))
         res.__class__ = dicts[tagName]
         // apply __init__
         var args = [res].concat(Array.prototype.slice.call(arguments))

@@ -15,10 +15,11 @@ import header
 header.show('../<prefix>/', 'es')
 
 def run(ev):
-    # run the code in the elt after the button
-    ix = ev.target.parent.children.index(ev.target)
-    elt = ev.target.parent.children[ix+1]
-    exec(elt.text)
+    # run the code in the element after the button
+    tg = ev.target
+    while tg.tagName != 'BUTTON':
+        tg = tg.parent
+    exec(tg.python_code,{})
     elt.focus()
 
 target = 'content'
@@ -33,6 +34,8 @@ for elt in document[target].get(selector='.exec'):
     elt.focus()
     btn = html.BUTTON('▶')
     btn.bind('click', run)
+    # set attribute python_code, used when button is hit
+    btn.python_code = src
     elt.parent.insertBefore(btn, elt)
 for elt in document[target].get(selector='.exec_on_load'):
     # Python code executed on page load
@@ -41,7 +44,7 @@ for elt in document[target].get(selector='.exec_on_load'):
     h.className = "pycode"
     elt.clear()
     elt <= h
-    exec(src)
+    exec(src, {})
 for elt in document[target].get(selector='.python'):
     src = elt.text.strip()
     h = highlight.highlight(src)
@@ -56,7 +59,7 @@ for elt in document[target].get(selector='.python'):
 
 <table id=banner cellpadding=0 cellspacing=0>
 <tr id=banner_row >
-<td class="logo"><a href="../../index.html"><img src="../../brython.svg" class="logo"></a></td>
+<td class="logo"><a href="../<prefix>/index.html"><img src="/brython.png" class="logo"></a></td>
 </tr>
 </table>
 
@@ -132,11 +135,6 @@ for elt in document[target].get(selector='.python'):
 <br><a class="navig" href="cookbook/read_text_from_imagemap.html">Ejemplo de onmouseover</a>
 </div>
 
-<h4>Notas de la implementación</h4>
-<div style="padding-left:10px;">
-<a class="navig" href="modele.html">Compilando y ejecutando</a>
-<br><a class="navig" href="implem.html">Conversión de sintaxis Python &rarr; JS</a>
-</div>
 </td>
 
 <td id="content" style="vertical-align:top;">

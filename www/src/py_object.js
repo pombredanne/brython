@@ -1,17 +1,19 @@
 // A function that builds the __new__ method for the factory function
 __BRYTHON__.$__new__ = function(factory){
     return function(cls){
+        /*
         if(cls===undefined){
             throw __BRYTHON__.builtins.TypeError(factory.$dict.__name__+'.__new__(): not enough arguments')
         }
+        */
         var res = factory.apply(null,[])
         res.__class__ = cls.$dict
         var init_func = null
         try{init_func = __BRYTHON__.builtins.getattr(res,'__init__')}
-        catch(err){__BRYTHON__.$pop_exc()}
+        catch(err){}
         if(init_func!==null){
-            var args = []
-            for(var i=1, _len_i = arguments.length; i < _len_i;i++){args.push(arguments[i])}
+            var args = [], pos=0
+            for(var i=1, _len_i = arguments.length; i < _len_i;i++){args[pos++]=arguments[i]}
             init_func.apply(null,args)
             res.__initialized__ = true
         }
@@ -31,11 +33,23 @@ var $ObjectDict = {
     $native:true
 }
 
-// function used to generate the methods that return 'unorderable types'
+// Function for comparison operators
+// In a<b, if b defines __gt__, use b.__gt__(a)
+var reverse_func = {'__lt__':'__gt__',
+    '__gt__':'__lt__',
+    '__le__': '__ge__',
+    '__ge__': '__le__'
+}
 var $ObjectNI = function(name,op){
-    return function(other){
-        throw _b_.TypeError('unorderable types: object() '+op+
-            ' '+ _b_.str($B.get_class(other).__name__)+'()')
+    return function(self, other){
+        var klass = $B.get_class(other), 
+            other_comp = _b_.getattr(klass, reverse_func[name])
+        if(other_comp.__func__===$ObjectDict[reverse_func[name]]){
+            throw _b_.TypeError('unorderable types: object() '+op+
+                ' '+ _b_.str($B.get_class(other).__name__)+'()')
+        }else{
+            return other_comp(other, self)
+        }
     }
 }
 
@@ -49,16 +63,20 @@ var opnames = ['add','sub','mul','truediv','floordiv','mod','pow',
     'lshift','rshift','and','xor','or']
 var opsigns = ['+','-','*','/','//','%','**','<<','>>','&','^', '|']
 
-$ObjectDict.__delattr__ = function(self,attr){delete self[attr]}
+$ObjectDict.__delattr__ = function(self,attr){
+    _b_.getattr(self, attr) // raises AttributeError if necessary
+    delete self[attr]; 
+    return _b_.None
+}
 
 $ObjectDict.__dir__ = function(self) {
-    var res = []
-
-    var objects = [self]
+    var objects = [self], pos=1
     var mro = $B.get_class(self).__mro__
     for (var i=0, _len_i = mro.length; i < _len_i; i++) {
-        objects.push(mro[i])
+        objects[pos++]=mro[i]
     }
+
+    var res = [], pos=0
     for (var i=0, _len_i = objects.length; i < _len_i; i++) {
         for(var attr in objects[i]){
             //if(attr.charAt(0)=='$' && attr.substr(0,2)!=='$$'){
@@ -71,7 +89,8 @@ $ObjectDict.__dir__ = function(self) {
                 // '0', '1' are in attributes of string 'ab'
                 continue
             }
-            res.push(attr)
+            if(attr=='__mro__'){continue}
+            res[pos++]=attr
         }
     }
     res = _b_.list(_b_.set(res))
@@ -92,23 +111,41 @@ $ObjectDict.__eq__ = function(self,other){
     return self===other
 }
 
+$ObjectDict.__format__ = function(){
+    var $ = $B.args('__format__', 2, {self:null, spec:null},
+        ['self', 'spec'], arguments, {}, null, null)
+    if($.spec!==''){throw _b_.TypeError("non-empty format string passed to object.__format__")}
+    return _b_.getattr($.self, '__repr__')()
+}
+
 $ObjectDict.__ge__ = $ObjectNI('__ge__','>=')
 
 $ObjectDict.__getattribute__ = function(obj,attr){
-    var klass = $B.get_class(obj)
+    
+    var klass = obj.__class__ || $B.get_class(obj)
     if(attr==='__class__'){
         return klass.$factory
     }
     var res = obj[attr],args=[]
-
+    
     if(res===undefined){
         // search in classes hierarchy, following method resolution order
-        //if(attr=='show'){console.log('object getattr '+attr+' of obj '+obj)}
         var mro = klass.__mro__
         for(var i=0, _len_i = mro.length; i < _len_i;i++){
+            if(mro[i].$methods){
+                var method = mro[i].$methods[attr]
+                if(method!==undefined){
+                    return method(obj)
+                }
+            }
             var v=mro[i][attr]
             if(v!==undefined){
                 res = v
+                break
+            }else if(attr=='__str__' && mro[i]['__repr__']!==undefined){
+                // If the class doesn't define __str__ but defines __repr__,
+                // use __repr__
+                res = mro[i]['repr']
                 break
             }
         }
@@ -119,25 +156,39 @@ $ObjectDict.__getattribute__ = function(obj,attr){
             return res
         }
     }
-
+    
     if(res!==undefined){
-        var get_func = res.__get__
+
+        if(res.__class__===_b_.property.$dict){
+            return res.__get__(res, obj, klass)
+        }
+
+        var __get__ = _b_.getattr(res,'__get__',null)
+
+        // For descriptors, attribute resolution is done by applying __get__
+        if(__get__!==null){
+            try{return __get__.apply(null,[obj, klass])}
+            catch(err){
+                console.log('error in get.apply', err)
+                console.log(__get__+'')
+                throw err
+            }
+        }
         
-        if(get_func===undefined && (typeof res=='object')){
-            var __get__ = _b_.getattr(res,'__get__',null);
+        if(typeof res=='object'){
             if(__get__ && (typeof __get__=='function')){
                 get_func = function(x,y){return __get__.apply(x,[y,klass])}
             }
         }
         
-        if(get_func===undefined && (typeof res=='function')){
-            get_func = function(x){return x}
+        if(__get__===null && (typeof res=='function')){
+            __get__ = function(x){return x}
         }
-        if(get_func!==undefined){ // descriptor
+        if(__get__!==null){ // descriptor
             res.__name__ = attr
             // __new__ is a static method
             if(attr=='__new__'){res.$type='staticmethod'}
-            var res1 = get_func.apply(null,[res,obj,klass])
+            var res1 = __get__.apply(null,[res,obj,klass])
             if(typeof res1=='function'){
                 // If attribute is a class then return it unchanged
                 //
@@ -159,76 +210,30 @@ $ObjectDict.__getattribute__ = function(obj,attr){
                 // self as first argument
     
                 if(res1.__class__===$B.$factory) return res
+                
+                // Same thing if the attribute is a method of an instance
+                // =================
+                // class myRepr:
+                //     def repr(self, a):
+                //         return a
+                //    
+                // class myclass:
+                //     _repr=myRepr()
+                //     repr= _repr.repr
+                //
+                //     def myfunc(self):
+                //         return self.repr('test')
+                // =================
+                // In function myfunc, self.repr is an instance of MyRepr,
+                // it must be used as is, not transformed into a method
+
+                else if(res1.__class__===$B.$MethodDict){
+                    return res
+                }
 
                 // instance method object
-                var __self__,__func__=res,__repr__,__str__
-                switch(res.$type) {
-                  case undefined:
-                  case 'function':
-                    //if(res.$type===undefined || res.$type=='function'){
-                    // the attribute is a function : return an instance method,
-                    // called with the instance as first argument
-                    args = [obj]
-                    __self__ = obj
-                    __func__ = res1
-                    __repr__ = __str__ = function(){
-                        var x = '<bound method '+attr
-                        x += " of '"+klass.__name__+"' object>"
-                        return x
-                    }
-                    break
-                  case 'instancemethod':
-                    //}else if(res.$type==='instancemethod'){
-                    // The attribute is a method of an instance of another class
-                    // Return it unchanged
-                    return res
-                  case 'classmethod':
-                    //}else if(res.$type==='classmethod'){
-                    // class method : called with the class as first argument
-                    args = [klass]
-                    __self__ = klass
-                    __func__ = res1
-                    __repr__ = __str__ = function(){
-                        var x = '<bound method type'+'.'+attr
-                        x += ' of '+klass.__name__+'>'
-                        return x
-                    }
-                    break
-                  case 'staticmethod':
-                    //}else if(res.$type==='staticmethod'){
-                    // static methods have no __self__ or __func__
-                    args = []
-                    __repr__ = __str__ = function(){
-                        return '<function '+klass.__name__+'.'+attr+'>'
-                    }
-                }
-
-                // build the instance method, called with a list of arguments
-                // depending on the method type
-                var method = (function(initial_args){
-                    return function(){
-                        // make a local copy of initial args
-                        var local_args = initial_args.slice()
-                        for(var i=0, _len_i = arguments.length; i < _len_i;i++){
-                            local_args.push(arguments[i])
-                        }
-                        var x = res.apply(obj,local_args)
-                        if(x===undefined) return _b_.None
-                        return x
-                    }})(args)
-                method.__class__ = $B.$InstanceMethodDict
-                method.__eq__ = function(other){
-                    return other.$res === res
-                }
-                method.__func__ = __func__
-                method.__repr__ = __repr__
-                method.__self__ = __self__
-                method.__str__ = __str__
-                method.__code__ = {'__class__' : $B.CodeDict}
-                method.__doc__ = res.__doc__ || ''
-                method.$type = 'instancemethod'
-                method.$res = res
-                return method
+                return $B.make_method(attr, klass, res)(obj)
+                
             }else{
                 // result of __get__ is not a function
                 return res1
@@ -252,7 +257,7 @@ $ObjectDict.__getattribute__ = function(obj,attr){
         }
         if(_ga!==undefined){
             try{return _ga(obj,attr)}
-            catch(err){void(0)}
+            catch(err){}
         }
         // for special methods such as __mul__, look for __rmul__ on operand
         if(attr.substr(0,2)=='__' && attr.substr(attr.length-2)=='__'){
@@ -260,17 +265,20 @@ $ObjectDict.__getattribute__ = function(obj,attr){
             var rank = opnames.indexOf(attr1)
             if(rank > -1){
                 var rop = '__r'+opnames[rank]+'__' // name of reflected operator
-                return function(){
+                var func = function(){
                     try{
                         // Operands must be of different types
-                        if($B.$get_class(arguments[0])===klass){throw Error('')}
+                        if($B.get_class(arguments[0])===klass){throw Error('')}
                         return _b_.getattr(arguments[0],rop)(obj)
                     }catch(err){
-                        var msg = "unsupported operand types for "+opsigns[rank]+": '"
-                        msg += klass.__name__+"' and '"+arguments[0].__class__.__name__+"'"
+                        var msg = "unsupported operand types for "+
+                            opsigns[rank]+": '"+ klass.__name__+"' and '"+
+                            $B.get_class(arguments[0]).__name__+"'"
                         throw _b_.TypeError(msg)
                     }
                 }
+                func.$infos = {__name__ : klass.__name__+'.'+attr}
+                return func
             }
         }
         //throw AttributeError('object '+obj.__class__.__name__+" has no attribute '"+attr+"'")
@@ -280,11 +288,12 @@ $ObjectDict.__getattribute__ = function(obj,attr){
 $ObjectDict.__gt__ = $ObjectNI('__gt__','>')
 
 $ObjectDict.__hash__ = function (self) { 
-    $B.$py_next_hash+=1; 
-    return $B.$py_next_hash;
+    var hash = self.__hashvalue__
+    if(hash!==undefined){return hash}
+    return self.__hashvalue__=$B.$py_next_hash--;
 }
 
-$ObjectDict.__init__ = function(){}
+$ObjectDict.__init__ = function(){return _b_.None}
 
 $ObjectDict.__le__ = $ObjectNI('__le__','<=')
 
@@ -294,22 +303,21 @@ $ObjectDict.__mro__ = [$ObjectDict]
 
 $ObjectDict.__new__ = function(cls){
     if(cls===undefined){throw _b_.TypeError('object.__new__(): not enough arguments')}
-    var obj = {}
-    obj.__class__ = cls.$dict
-    return obj
+    return {__class__ : cls.$dict}
 }
 
-$ObjectDict.__ne__ = function(self,other){return self!==other}
-
-$ObjectDict.__or__ = function(self,other){
-    if(_b_.bool(self)) return self
-    return other
+$ObjectDict.__ne__ = function(self,other){
+    return !_b_.getattr(self, '__eq__')(other)
 }
 
 $ObjectDict.__repr__ = function(self){
-    if(self===object || self === undefined) return "<class 'object'>"
-    if(self.__class__===$B.$type) return "<class '"+self.__class__.__name__+"'>"
-    return "<"+self.__class__.__name__+" object>"
+    if(self===object) return "<class 'object'>"
+    if(self.__class__===$B.$factory) return "<class '"+self.$dict.__name__+"'>"
+    if(self.__class__.__module__!==undefined){
+        return "<"+self.__class__.__module__+"."+self.__class__.__name__+" object>"
+    }else{
+        return "<"+self.__class__.__name__+" object>"
+    }
 }
 
 $ObjectDict.__setattr__ = function(self,attr,val){
@@ -324,12 +332,13 @@ $ObjectDict.__setattr__ = function(self,attr,val){
         }
     }
     self[attr] = val
+    return _b_.None
 }
 $ObjectDict.__setattr__.__str__ = function(){return 'method object.setattr'}
 
 $ObjectDict.__str__ = $ObjectDict.__repr__
 
-//$ObjectDict.toString = $ObjectDict.__repr__ //function(){return '$ObjectDict'}
+$ObjectDict.__subclasshook__ = function(){return _b_.NotImplemented}
 
 // constructor of the built-in class 'object'
 function object(){return {__class__:$ObjectDict}}
@@ -338,6 +347,31 @@ object.$dict = $ObjectDict
 // object.__class__ = $factory : this is done in py_types
 $ObjectDict.$factory = object
 object.__repr__ = object.__str__ = function(){return "<class 'object'>"}
+
+$B.make_class = function(class_obj){
+    // class_obj has at least an attribute "name", and possibly an attribute
+    // init
+
+    function A(){
+        var res = {__class__:A.$dict}
+        if(class_obj.init){
+            class_obj.init.apply(null, 
+                [res].concat(Array.prototype.slice.call(arguments)))
+        }
+        return res
+    }
+
+    A.__class__ = $B.$factory
+
+    A.$dict = {
+        $factory: A,
+        __class__: $B.type,
+        __name__: class_obj.name
+    }
+    A.$dict.__mro__ = [A.$dict, object.$dict]
+
+    return A
+}
 
 return object
 

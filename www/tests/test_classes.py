@@ -110,4 +110,27 @@ try:
 except AttributeError:
     pass
 
+
+class myclass:
+  pass
+
+class myclass1(myclass):
+  pass
+
+a=myclass()
+assert a.__doc__ == None
+
+b=myclass1()
+assert b.__doc__ == None
+
+# classmethod
+class A:
+    def __init__(self, arg):
+        self.arg = arg
+    @classmethod
+    def foo(cls, x):
+        return cls(x)
+
+assert A(5).foo(88).arg == 88
+
 print('passed all tests..')

@@ -11,10 +11,11 @@ function $UnsupportedOpType(op,class1,class2){
 var $ComplexDict = {__class__:$B.$type,
     __dir__:$ObjectDict.__dir__,
     __name__:'complex',
-    $native:true
+    $native:true,
+    descriptors:{real:true, imag:true}
 }
 
-$ComplexDict.__abs__ = function(self,other){return complex(abs(self.real),abs(self.imag))}
+$ComplexDict.__abs__ = function(self){return Math.sqrt(Math.pow(self.real,2)+Math.pow(self.imag,2))}
 
 $ComplexDict.__bool__ = function(self){return new Boolean(self.real || self.imag)}
 
@@ -88,10 +89,39 @@ $ComplexDict.__new__ = function(cls){
     return {__class__:cls.$dict}
 }
 
-//$ComplexDict.__or__ = function(self,other){return self}
+$ComplexDict.__pos__ = function(self){return self}
+
+function complex2expo(cx){
+    var norm = Math.sqrt((cx.real*cx.real)+(cx.imag*cx.imag)),
+        sin = cx.imag/norm,
+        cos = cx.real/norm,
+        angle
+    
+    if(cos==0){angle = sin==1 ? Math.PI/2 : 3*Math.PI/2}
+    else if(sin==0){angle = cos==1 ? 0 : Math.PI}
+    else{angle = Math.atan(sin/cos)}
+    return {norm: norm, angle: angle}
+}
 
 $ComplexDict.__pow__ = function(self,other){
-    $UnsupportedOpType("**",complex,$B.get_class(other))
+    // complex power : use Moivre formula (cos(x) + i sin(x))**y = cos(xy)+i sin(xy)
+    var exp = complex2expo(self),
+        angle = exp.angle,
+        res = Math.pow(exp.norm, other)
+    
+    if(_b_.isinstance(other, [_b_.int, _b_.float])){
+        return complex(res*Math.cos(angle*other), res*Math.sin(angle*other))
+    }else if(_b_.isinstance(other, complex)){
+        // (r*e**Ai)**(x+iy) = (e**iAx)*(e**-Ay)
+        var x = other.real,
+            y = other.imag
+        var pw = Math.pow(exp.norm, x)*Math.pow(Math.E, -y*angle),
+            theta = y*Math.log(exp.norm)-x*angle
+        return complex(pw*Math.cos(theta), pw*Math.sin(theta))      
+    }else{
+        throw _b_.TypeError("unsupported operand type(s) for ** or pow(): "+
+            "'complex' and '"+$B.get_class(other).__name__+"'")
+    }
 }
 
 $ComplexDict.__str__ = $ComplexDict.__repr__ = function(self){
@@ -150,7 +180,7 @@ $ComplexDict.__ior__=$ComplexDict.__or__
 // operations
 var $op_func = function(self,other){
     if(isinstance(other,complex)) return complex(self.real-other.real,self.imag-other.imag)
-    if (isinstance(other,_b_.int)) return complex(self.real-other.valueOf(),self.imag)
+    if (isinstance(other,_b_.int)) return complex($B.sub(self.real,other.valueOf()),self.imag)
     if(isinstance(other,_b_.float)) return complex(self.real - other.value, self.imag)
     if(isinstance(other,_b_.bool)){
          var bool_value=0;
@@ -160,12 +190,11 @@ var $op_func = function(self,other){
     throw _b_.TypeError("unsupported operand type(s) for -: "+self.__repr__()+
              " and '"+$B.get_class(other).__name__+"'")
 }
-$op_func += '' // source code
-var $ops = {'+':'add','-':'sub'}
-for(var $op in $ops){
-    eval('$ComplexDict.__'+$ops[$op]+'__ = '+$op_func.replace(/-/gm,$op))
-}
+$ComplexDict.__sub__ = $op_func
 
+$op_func += '' // source code
+$op_func = $op_func.replace(/-/gm, '+').replace(/sub/gm, 'add')
+eval('$ComplexDict.__add__ = '+$op_func)
 
 // comparison methods
 var $comp_func = function(self,other){
@@ -180,7 +209,39 @@ for(var $op in $B.$comps){
 // add "reflected" methods
 $B.make_rmethods($ComplexDict)
 
+// Descriptors to return real and imag
+//$ComplexDict.descriptors = {
+    //'real': function(self){return new Number(self.real)},
+    //'imag': function(self){return new Number(self.imag)}
+//}
+$ComplexDict.real = function(self){return new Number(self.real)}
+$ComplexDict.imag = function(self){return new Number(self.imag)}
+
+var complex_re = /^(\d*\.?\d*)([\+\-]?)(\d*\.?\d*)(j?)$/
+
 var complex=function(real,imag){
+    if(typeof real=='string'){
+        if(imag!==undefined){
+            throw _b_.TypeError("complex() can't take second arg if first is a string")
+        }
+        var parts = complex_re.exec(real)
+        if(parts===null){
+            throw _b_.ValueError("complex() arg is a malformed string")
+        }else if(parts[1]=='.' || parts[3]=='.'){
+            throw _b_.ValueError("complex() arg is a malformed string")
+        }else if(parts[4]=='j'){
+            if(parts[2]==''){
+                real = 0; imag = parseFloat(parts[1])
+            }else{
+                real = parseFloat(parts[1])
+                imag = parts[3]=='' ? 1 : parseFloat(parts[3])
+                imag = parts[2]=='-' ? -imag : imag
+            }
+        }else{
+            real = parseFloat(parts[1])
+            imag = 0
+        }
+    }
     var res = {
         __class__:$ComplexDict,
         real:real || 0,
